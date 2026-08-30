@@ -1,0 +1,9 @@
+# Laufzeit-Abhängigkeiten (für Start aus dem Quellcode)
+# Die fertige EXE (dist/Temp-Reiniger.exe) ist davon unabhängig.
+customtkinter>=5.2
+pystray>=0.19
+Pillow>=10.0
+pywin32>=306 ; sys_platform == "win32"
+
+# Nur zum Bauen der EXE:
+# pyinstaller>=6.0
