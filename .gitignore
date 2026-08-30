@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# PyInstaller: Zwischen-Dateien (regenerierbar)
+build/
+
+# Graphify: interner Cache (regenerierbar)
+graphify-out/cache/
+
+# OS / Editor
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
