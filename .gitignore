@@ -5,6 +5,7 @@ __pycache__/
 
 # PyInstaller: Zwischen-Dateien (regenerierbar)
 build/
+dist/
 
 # Graphify: interner Cache (regenerierbar)
 graphify-out/cache/
