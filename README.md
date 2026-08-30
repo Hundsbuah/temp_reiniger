@@ -44,7 +44,7 @@ Ordner ist, und entscheidest gezielt, was geleert wird.
 
 ### Option A — Fertige EXE (empfohlen)
 Die fertige EXE als **GitHub-Release** laden: **[Temp-Reiniger.exe](https://github.com/Hundsbuah/temp_reiniger/releases)**
-(v1.0.0). Single-File, ohne Python-Installation — einmal klicken und los.
+(v1.1.0). Single-File, ohne Python-Installation — einmal klicken und los.
 
 ### Option B — Aus dem Quellcode
 ```bash

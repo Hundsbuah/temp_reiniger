@@ -50,12 +50,19 @@ SICHERHEIT
 """
 
 import os
+import stat
 import queue
 import time
 import threading
 import traceback
 import tkinter as tk
+import tkinter.messagebox as tk_messagebox
 import customtkinter as ctk
+
+# --------------------------------------------------------------------------- #
+#  Version
+# --------------------------------------------------------------------------- #
+__version__ = "1.1.0"
 
 # --------------------------------------------------------------------------- #
 #  Design-Token
@@ -150,7 +157,15 @@ def delete_folder_contents(top):
             fp = os.path.join(dirpath, name)
             try:
                 st = os.lstat(fp)
-                os.remove(fp)
+                try:
+                    os.remove(fp)
+                except PermissionError:
+                    # Windows: read-only-Datei -> Write-Bit setzen und erneut löschen
+                    try:
+                        os.chmod(fp, stat.S_IWRITE)
+                        os.remove(fp)
+                    except OSError:
+                        raise
                 freed += st.st_size
                 deleted += 1
             except (PermissionError, OSError):
@@ -158,6 +173,13 @@ def delete_folder_contents(top):
         if dirpath != top:
             try:
                 os.rmdir(dirpath)          # nur, wenn leer; Wurzel bleibt
+            except PermissionError:
+                # Windows: read-only-Ordner -> Write-Bit setzen und erneut entfernen
+                try:
+                    os.chmod(dirpath, stat.S_IWRITE)
+                    os.rmdir(dirpath)
+                except OSError:
+                    pass
             except OSError:
                 pass
     return freed, deleted, skipped
@@ -238,13 +260,13 @@ class TempApp(ctk.CTk):
         self._last_total = None
         self._status_mode = None
         self._rescan_job = None
-        self._tray_queue = queue.Queue()
+        self._ui_queue = queue.Queue()   # Main-Thread-Kommandos (Tray + Worker-Callbacks)
         self._tray_icon = None
         self._tray_ready = False
         self._tray_active = False
 
         ctk.set_appearance_mode("Light")
-        self.title("Temp-Reiniger")
+        self.title(f"Temp-Reiniger {__version__}")
         self._center(self, 1060, 600)
         self.minsize(920, 540)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -264,7 +286,7 @@ class TempApp(ctk.CTk):
         self._scan_all()   # beim Start nur einlesen — niemals löschen
         self._status_ticker()
         self._start_tray()
-        self._poll_tray()
+        self._poll_ui()
 
     # ------------------------------------------------------------- layout
     def _center(self, win, w, h):
@@ -542,10 +564,8 @@ class TempApp(ctk.CTk):
                 except Exception:
                     memo[p] = (0, 0)
         payload = [(c["idx"], memo.get(c["path"], (0, 0))) for c in self.cards]
-        try:
-            self.after(0, lambda: self._on_scanned(payload))
-        except tk.TclError:
-            pass
+        # thread-sicher: Ergebnis in Queue legen, Main-Thread führt _on_scanned aus
+        self._ui_queue.put(lambda: self._on_scanned(payload))
 
     def _on_scanned(self, payload):
         if self._closing:
@@ -555,7 +575,12 @@ class TempApp(ctk.CTk):
             c["bytes"], c["nfiles"] = b, n
         # relative Füllstand (gröster Ordner = voll)
         max_b = max((c["bytes"] or 0) for c in self.cards) or 1
-        total = sum(c["bytes"] or 0 for c in self.cards)
+        # Gesamt über EINDEUTIGE Ordner: Duplikate (z. B. %TEMP% == %LOCALAPPDATA%\Temp)
+        # nur einmal zählen — die Karten zeigen trotzdem jeweils ihre eigene Größe.
+        _uniq = {}
+        for c in self.cards:
+            _uniq[os.path.realpath(c["path"]) if c["path"] else ("idx", c["idx"])] = c["bytes"] or 0
+        total = sum(_uniq.values())
         # Duplikat-Hinweis (gleicher physischer Pfad)
         paths = [os.path.realpath(c["path"]) if c["path"] else None for c in self.cards]
         dup = len(set(paths)) < len(paths)
@@ -650,10 +675,8 @@ class TempApp(ctk.CTk):
             freed += f
             deleted += d
             skipped += s
-        try:
-            self.after(0, lambda: self._on_deleted(freed, deleted, skipped))
-        except tk.TclError:
-            pass
+        # thread-sicher: Ergebnis in Queue legen, Main-Thread führt _on_deleted aus
+        self._ui_queue.put(lambda: self._on_deleted(freed, deleted, skipped))
 
     def _on_deleted(self, freed, deleted, skipped):
         if self._closing:
@@ -714,21 +737,36 @@ class TempApp(ctk.CTk):
         )
 
     def _tray_action(self, kind, idx):
-        """Tray-Menü: Löschen ausführen (direkt — explizite Menüwahl)."""
+        """Tray-Menü: Löschen ausführen (explizite Menüwahl, Main-Thread)."""
         if self._closing:
             return
-        target = {"all": True} if kind == "all" else {"idx": idx}
-        self._tray_queue.put(lambda: self._do_delete(target))
+        if kind == "all":
+            # destruktiv: kurze Bestätigung im Main-Thread (siehe _confirm_tray_all)
+            self._ui_queue.put(self._confirm_tray_all)
+        else:
+            target = {"idx": idx}
+            self._ui_queue.put(lambda: self._do_delete(target))
+
+    def _confirm_tray_all(self):
+        """Tray 'Alle leeren': Bestätigung (läuft im Main-Thread)."""
+        if self._closing or self._busy:
+            return
+        if tk_messagebox.askyesno(
+            "Alle Temp-Ordnere leeren",
+            "Wirklich ALLE drei Temp-Ordnere leeren?\n"
+            "Gesperrte Dateien werden übersprungen.",
+        ):
+            self._do_delete({"all": True})
 
     def _tray_show(self):
         if self._closing:
             return
-        self._tray_queue.put(self._show_window)
+        self._ui_queue.put(self._show_window)
 
     def _tray_quit(self):
         if self._closing:
             return
-        self._tray_queue.put(self._do_quit)
+        self._ui_queue.put(self._do_quit)
 
     def _show_window(self):
         if self._closing:
@@ -741,24 +779,28 @@ class TempApp(ctk.CTk):
         except tk.TclError:
             pass
 
-    def _poll_tray(self):
-        """Haupt-Thread-Poller: führt Tray-Aktionen sicher im Tk-Thread aus."""
+    def _poll_ui(self):
+        """Haupt-Thread-Poller: führt Main-Thread-Kommandos sicher im Tk-Thread aus.
+
+        Tray-Aktionen UND Worker-Callbacks (Scan/Delete) laufen dadurch immer im
+        Main-Thread -> thread-sichere Entkopplung (kein after(0, ...) aus Threads).
+        """
         if self._closing:
             return
         try:
             while True:
-                fn = self._tray_queue.get_nowait()
+                fn = self._ui_queue.get_nowait()
                 fn()
         except queue.Empty:
             pass
-        self.after(120, self._poll_tray)
+        self.after(120, self._poll_ui)
 
     def _on_unmap(self, event):
         """Minimieren -> in den Tray verschwinden (Fenster ausblenden)."""
         if self._closing or not getattr(self, "_tray_active", False):
             return
         try:
-            if self.attributes("-iconic"):
+            if self.state() == "iconic":
                 self.withdraw()
         except tk.TclError:
             pass
