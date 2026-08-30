@@ -37,9 +37,10 @@ Near-Black+Neon+Glow, Broadsheet-Haarlinien).
 | Text / Labels / Buttons | **Segoe UI** | 11–13 | Workhorse, native Lesbarkeit |
 
 ## Layout / Komposition
-Kopfzeile (Wortmarke links `● TEMP-REINIGER`, Status rechts
-`● Bereit · C:\ · 3 Temp-Ordner`) → **drei gleiche Karten nebeneinander**
-→ Gesamt-Zeile über alle drei → Fußstatusleiste.
+Kopfzeile (Wortmarke links `● TEMP-REINIGER`; rechts Ghost-Button
+`Aktualisieren` (Refresh) + Status `● Bereit · C:\ · 3 Temp-Ordner`) →
+**drei gleiche Karten nebeneinander** → Gesamt-Zeile über alle drei →
+Fußstatusleiste.
 
 Karte (innen, Grid, dehnbarer Zwischenraum vor dem Button):
 ```
@@ -65,6 +66,9 @@ sinken Zahl und Leiste (Tween vom alten zum neuen Wert) — das „Leerziehen".
 - Button-Hover + Zwei-Stufen-Armierung (Farbe → Amber, Text „Wirklich …?").
 
 ## Zustände
+- **Aktualisieren (Refresh):** Ghost-Button in der Kopfzeile rechts; re-liest
+  die drei Ordner (reiner Refresh, **kein Löschen**). Während Scan:
+  deaktiviert + Text „Aktualisiere …
 - **Scannen:** Status „Wird eingelesen …", Zahlen `…`, Punkte amber.
 - **Bereit:** `● Bereit · eingelesen HH:MM · X gesamt`.
 - **Löschen (armiert):** Button amber, „Wirklich löschen?" / „Wirklich alles löschen?".

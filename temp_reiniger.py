@@ -23,7 +23,8 @@ STORY
   oder alles. Nach dem Leeren sinken Zahl und Füllstand.
 
 FIRST VIEWPORT
-  Kopfzeile (Wortmarke links, Status-Punkt rechts). Darunter drei gleiche
+  Kopfzeile (Wortmarke links; rechts „Aktualisieren"-Refresh + Status-Punkt).
+  Darunter drei gleiche
   Karten nebeneinander: Titel (Env-Token), Pfad (mono), große Zahl,
   Füllstand-Leiste, Dateizahl, Lösch-Button. Darunter eine Gesamt-Zeile
   über alle drei: großes Gesamt-Label links, großer „Alle löschen"-Button
@@ -267,6 +268,14 @@ class TempApp(ctk.CTk):
 
         right = ctk.CTkFrame(header, fg_color="transparent")
         right.pack(side="right")
+        # Sekundäre Aktion: Temp-Größen neu einlesen / Ordner aktualisieren (kein Löschen)
+        self.scan_button = ctk.CTkButton(
+            right, text="Aktualisieren", font=self.f_body, height=32,
+            fg_color="transparent", border_width=1, border_color=ACCENT,
+            hover_color=TRACK, text_color=ACCENT, corner_radius=8,
+            command=self._scan_all,
+        )
+        self.scan_button.pack(side="left", padx=(0, 14))
         self.status_dot = ctk.CTkLabel(right, text=DOT, font=self.f_small,
                                        text_color=OK)
         self.status_dot.pack(side="left", padx=(0, 7))
@@ -377,6 +386,7 @@ class TempApp(ctk.CTk):
         for c in self.cards:
             c["button"].configure(state=state)
         self.total_button.configure(state=state)
+        self.scan_button.configure(state=state)
         if busy:
             for c in self.cards:
                 self._disarm(c)
@@ -425,6 +435,7 @@ class TempApp(ctk.CTk):
     # ------------------------------------------------------------- Scan
     def _scan_all(self):
         self._set_busy(True)
+        self.scan_button.configure(text="Aktualisiere …")
         self._set_status("Wird eingelesen …", INK_SOFT)
         self.status_dot.configure(text_color=WARN)
         for c in self.cards:
@@ -482,6 +493,7 @@ class TempApp(ctk.CTk):
         self._prev_total = total
         # fertig
         self._set_busy(False)
+        self.scan_button.configure(text="Aktualisieren")
         self.status_dot.configure(text_color=OK)
         now = time.strftime("%H:%M")
         self._set_status(f"Bereit · eingelesen {now} · {format_bytes(total)} gesamt",
