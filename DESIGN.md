@@ -79,9 +79,19 @@ sinken Zahl und Leiste (Tween vom alten zum neuen Wert) — das „Leerziehen".
 - **Duplikat:** Hinweis `zwei Pfade zeigen auf denselben Ordner`.
 - **Leerer Ordner:** `0 B`, Leiste leer (kein Fehlerzustand).
 
+## System-Tray (Minimieren / Rechtsklick)
+- **Minimieren oder Schließen** des Fensters → Fenster wird ausgeblendet, die
+  App lebt weiter als **Tray-Icon** (Teal-Platte mit weißem Papierkorb).
+- **Rechtsklick** im Tray: die 4 Lösch-Optionen (`%TEMP% leeren`,
+  `%LOCALAPPDATA%\Temp leeren`, `%SystemRoot%\Temp leeren`,
+  `Alle Temp-Ordnere leeren`) + `Fenster öffnen` + `Temp-Reiniger beenden`.
+- Tray-Aktionen laufen über einen thread-sicheren Queue-Poller sicher in den
+  Tk-Haupt-Thread (pystray hat einen eigenen Tray-Thread).
+- `Fenster öffnen` (bzw. Linksklick) zeigt das Hauptfenster wieder an.
+
 ## Sicherheitsregeln (gebaut)
 - Beim Start wird **nie** gelöscht — nur eingelesen.
-- Löschen nur per explizitem Button (zwei Schritte).
+- Löschen nur per expliziter Auswahl: Button (zwei Schritte) oder Tray-Rechtsklick.
 - Wurzelmappen bleiben immer — nur der Inhalt wird entfernt.
 - Gesperrte/in-Benutzung Dateien werden übersprungen, kein Abbruch.
 - `C:\Windows\Temp` ohne Admin nur teilweise leerbar (Überspringen).

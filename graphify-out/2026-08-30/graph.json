@@ -60,18 +60,6 @@
       "source_location": "L78"
     },
     {
-      "id": "temp_reiniger_delete_folder_contents",
-      "label": "delete_folder_contents()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 0,
-      "community_name": "temp_reiniger.py",
-      "file_type": "code",
-      "norm_label": "delete_folder_contents()",
-      "source_file": "temp_reiniger.py",
-      "source_location": "L134"
-    },
-    {
       "id": "temp_reiniger_dev_screenshot",
       "label": "_dev_screenshot()",
       "_callable": true,
@@ -81,7 +69,7 @@
       "file_type": "code",
       "norm_label": "_dev_screenshot()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L627"
+      "source_location": "L656"
     },
     {
       "id": "temp_reiniger_format_bytes",
@@ -105,19 +93,7 @@
       "file_type": "code",
       "norm_label": "main()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L659"
-    },
-    {
-      "id": "temp_reiniger_tempapp_delete_worker",
-      "label": "._delete_worker()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 0,
-      "community_name": "temp_reiniger.py",
-      "file_type": "code",
-      "norm_label": "._delete_worker()",
-      "source_file": "temp_reiniger.py",
-      "source_location": "L580"
+      "source_location": "L688"
     },
     {
       "id": "temp_reiniger_tooltip_hide",
@@ -156,52 +132,64 @@
       "source_location": "L185"
     },
     {
-      "id": "temp_reiniger_tempapp_arm",
-      "label": "._arm()",
+      "id": "temp_reiniger_delete_folder_contents",
+      "label": "delete_folder_contents()",
       "_callable": true,
       "_origin": "ast",
       "community": 1,
-      "community_name": "._build_card",
+      "community_name": "._on_deleted",
       "file_type": "code",
-      "norm_label": "._arm()",
+      "norm_label": "delete_folder_contents()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L438"
+      "source_location": "L134"
     },
     {
-      "id": "temp_reiniger_tempapp_build_card",
-      "label": "._build_card()",
+      "id": "temp_reiniger_format_count",
+      "label": "format_count()",
       "_callable": true,
       "_origin": "ast",
       "community": 1,
-      "community_name": "._build_card",
+      "community_name": "._on_deleted",
       "file_type": "code",
-      "norm_label": "._build_card()",
+      "norm_label": "format_count()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L294"
+      "source_location": "L105"
     },
     {
-      "id": "temp_reiniger_tempapp_ellipsize",
-      "label": "._ellipsize()",
+      "id": "temp_reiniger_tempapp_delete_worker",
+      "label": "._delete_worker()",
       "_callable": true,
       "_origin": "ast",
       "community": 1,
-      "community_name": "._build_card",
+      "community_name": "._on_deleted",
       "file_type": "code",
-      "norm_label": "._ellipsize()",
+      "norm_label": "._delete_worker()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L380"
+      "source_location": "L607"
     },
     {
-      "id": "temp_reiniger_tempapp_on_card_delete",
-      "label": "._on_card_delete()",
+      "id": "temp_reiniger_tempapp_on_deleted",
+      "label": "._on_deleted()",
       "_callable": true,
       "_origin": "ast",
       "community": 1,
-      "community_name": "._build_card",
+      "community_name": "._on_deleted",
       "file_type": "code",
-      "norm_label": "._on_card_delete()",
+      "norm_label": "._on_deleted()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L542"
+      "source_location": "L631"
+    },
+    {
+      "id": "temp_reiniger_tempapp_schedule_rescan",
+      "label": "._schedule_rescan()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 1,
+      "community_name": "._on_deleted",
+      "file_type": "code",
+      "norm_label": "._schedule_rescan()",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L426"
     },
     {
       "id": "temp_reiniger_tempapp_center",
@@ -209,11 +197,11 @@
       "_callable": true,
       "_origin": "ast",
       "community": 2,
-      "community_name": "._on_deleted",
+      "community_name": "._status_ticker",
       "file_type": "code",
       "norm_label": "._center()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L242"
+      "source_location": "L243"
     },
     {
       "id": "temp_reiniger_tempapp_init",
@@ -221,47 +209,11 @@
       "_callable": true,
       "_origin": "ast",
       "community": 2,
-      "community_name": "._on_deleted",
+      "community_name": "._status_ticker",
       "file_type": "code",
       "norm_label": ".__init__()",
       "source_file": "temp_reiniger.py",
       "source_location": "L208"
-    },
-    {
-      "id": "temp_reiniger_tempapp_on_deleted",
-      "label": "._on_deleted()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 2,
-      "community_name": "._on_deleted",
-      "file_type": "code",
-      "norm_label": "._on_deleted()",
-      "source_file": "temp_reiniger.py",
-      "source_location": "L604"
-    },
-    {
-      "id": "temp_reiniger_tempapp_scan_all",
-      "label": "._scan_all()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 2,
-      "community_name": "._on_deleted",
-      "file_type": "code",
-      "norm_label": "._scan_all()",
-      "source_file": "temp_reiniger.py",
-      "source_location": "L469"
-    },
-    {
-      "id": "temp_reiniger_tempapp_set_status",
-      "label": "._set_status()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 2,
-      "community_name": "._on_deleted",
-      "file_type": "code",
-      "norm_label": "._set_status()",
-      "source_file": "temp_reiniger.py",
-      "source_location": "L385"
     },
     {
       "id": "temp_reiniger_tempapp_status_ticker",
@@ -269,11 +221,11 @@
       "_callable": true,
       "_origin": "ast",
       "community": 2,
-      "community_name": "._on_deleted",
+      "community_name": "._status_ticker",
       "file_type": "code",
       "norm_label": "._status_ticker()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L404"
+      "source_location": "L405"
     },
     {
       "id": "temp_reiniger_tempapp_time_ago",
@@ -281,11 +233,11 @@
       "_callable": true,
       "_origin": "ast",
       "community": 2,
-      "community_name": "._on_deleted",
+      "community_name": "._status_ticker",
       "file_type": "code",
       "norm_label": "._time_ago()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L388"
+      "source_location": "L389"
     },
     {
       "id": "temp_reiniger_temp_definitions",
@@ -309,7 +261,7 @@
       "file_type": "code",
       "norm_label": "._build_header()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L262"
+      "source_location": "L263"
     },
     {
       "id": "temp_reiniger_tempapp_build_status",
@@ -321,7 +273,7 @@
       "file_type": "code",
       "norm_label": "._build_status()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L370"
+      "source_location": "L371"
     },
     {
       "id": "temp_reiniger_tempapp_build_ui",
@@ -333,19 +285,7 @@
       "file_type": "code",
       "norm_label": "._build_ui()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L249"
-    },
-    {
-      "id": "temp_reiniger_format_count",
-      "label": "format_count()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "._on_scanned",
-      "file_type": "code",
-      "norm_label": "format_count()",
-      "source_file": "temp_reiniger.py",
-      "source_location": "L105"
+      "source_location": "L250"
     },
     {
       "id": "temp_reiniger_scan_folder",
@@ -369,7 +309,7 @@
       "file_type": "code",
       "norm_label": "._on_scanned()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L497"
+      "source_location": "L523"
     },
     {
       "id": "temp_reiniger_tempapp_scan_worker",
@@ -381,7 +321,7 @@
       "file_type": "code",
       "norm_label": "._scan_worker()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L482"
+      "source_location": "L508"
     },
     {
       "id": "temp_reiniger_tempapp_tween",
@@ -393,7 +333,31 @@
       "file_type": "code",
       "norm_label": "._tween()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L448"
+      "source_location": "L473"
+    },
+    {
+      "id": "temp_reiniger_tempapp_arm",
+      "label": "._arm()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 7,
+      "community_name": "TempApp",
+      "file_type": "code",
+      "norm_label": "._arm()",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L463"
+    },
+    {
+      "id": "temp_reiniger_tempapp_build_card",
+      "label": "._build_card()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 7,
+      "community_name": "TempApp",
+      "file_type": "code",
+      "norm_label": "._build_card()",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L295"
     },
     {
       "id": "temp_reiniger_tempapp_build_total",
@@ -405,7 +369,19 @@
       "file_type": "code",
       "norm_label": "._build_total()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L342"
+      "source_location": "L343"
+    },
+    {
+      "id": "temp_reiniger_tempapp_cancel_rescan",
+      "label": "._cancel_rescan()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 7,
+      "community_name": "TempApp",
+      "file_type": "code",
+      "norm_label": "._cancel_rescan()",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L417"
     },
     {
       "id": "temp_reiniger_tempapp_disarm",
@@ -417,7 +393,7 @@
       "file_type": "code",
       "norm_label": "._disarm()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L427"
+      "source_location": "L452"
     },
     {
       "id": "temp_reiniger_tempapp_do_delete",
@@ -429,7 +405,19 @@
       "file_type": "code",
       "norm_label": "._do_delete()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L572"
+      "source_location": "L598"
+    },
+    {
+      "id": "temp_reiniger_tempapp_ellipsize",
+      "label": "._ellipsize()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 7,
+      "community_name": "TempApp",
+      "file_type": "code",
+      "norm_label": "._ellipsize()",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L381"
     },
     {
       "id": "temp_reiniger_tempapp_on_all_delete",
@@ -441,7 +429,19 @@
       "file_type": "code",
       "norm_label": "._on_all_delete()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L552"
+      "source_location": "L578"
+    },
+    {
+      "id": "temp_reiniger_tempapp_on_card_delete",
+      "label": "._on_card_delete()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 7,
+      "community_name": "TempApp",
+      "file_type": "code",
+      "norm_label": "._on_card_delete()",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L568"
     },
     {
       "id": "temp_reiniger_tempapp_on_close",
@@ -453,7 +453,19 @@
       "file_type": "code",
       "norm_label": "._on_close()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L622"
+      "source_location": "L650"
+    },
+    {
+      "id": "temp_reiniger_tempapp_scan_all",
+      "label": "._scan_all()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 7,
+      "community_name": "TempApp",
+      "file_type": "code",
+      "norm_label": "._scan_all()",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L494"
     },
     {
       "id": "temp_reiniger_tempapp_set_busy",
@@ -465,7 +477,19 @@
       "file_type": "code",
       "norm_label": "._set_busy()",
       "source_file": "temp_reiniger.py",
-      "source_location": "L416"
+      "source_location": "L441"
+    },
+    {
+      "id": "temp_reiniger_tempapp_set_status",
+      "label": "._set_status()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 7,
+      "community_name": "TempApp",
+      "file_type": "code",
+      "norm_label": "._set_status()",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L386"
     },
     {
       "id": "temp_reiniger",
@@ -479,18 +503,7 @@
       "source_location": "L1"
     },
     {
-      "id": "temp_reiniger_rationale_135",
-      "label": "Nur den INHALT von `top` l\u00f6schen. `top` selbst bleibt bestehen. R\u00fcckgabe:\u2026",
-      "_origin": "ast",
-      "community": 0,
-      "community_name": "temp_reiniger.py",
-      "file_type": "rationale",
-      "norm_label": "nur den inhalt von `top` loschen. `top` selbst bleibt bestehen. ruckgabe:...",
-      "source_file": "temp_reiniger.py",
-      "source_location": "L135"
-    },
-    {
-      "id": "temp_reiniger_rationale_628",
+      "id": "temp_reiniger_rationale_657",
       "label": "Fenster rendern, Gr\u00f6\u00dfen setzen (echtes Einlesen oder Mock), speichern.",
       "_origin": "ast",
       "community": 0,
@@ -498,7 +511,7 @@
       "file_type": "rationale",
       "norm_label": "fenster rendern, gro\u00dfen setzen (echtes einlesen oder mock), speichern.",
       "source_file": "temp_reiniger.py",
-      "source_location": "L628"
+      "source_location": "L657"
     },
     {
       "id": "temp_reiniger_rationale_79",
@@ -523,37 +536,48 @@
       "source_location": "L89"
     },
     {
-      "id": "temp_reiniger_rationale_439",
-      "label": "Zwei-Stufen-Best\u00e4tigung: Button kurz armieren.",
+      "id": "temp_reiniger_rationale_135",
+      "label": "Nur den INHALT von `top` l\u00f6schen. `top` selbst bleibt bestehen. R\u00fcckgabe:\u2026",
       "_origin": "ast",
       "community": 1,
-      "community_name": "._build_card",
+      "community_name": "._on_deleted",
       "file_type": "rationale",
-      "norm_label": "zwei-stufen-bestatigung: button kurz armieren.",
+      "norm_label": "nur den inhalt von `top` loschen. `top` selbst bleibt bestehen. ruckgabe:...",
       "source_file": "temp_reiniger.py",
-      "source_location": "L439"
+      "source_location": "L135"
     },
     {
-      "id": "temp_reiniger_rationale_389",
+      "id": "temp_reiniger_rationale_427",
+      "label": "Ordner nach L\u00f6sch-Aktion automatisch neu einscannen. Kurze Verz\u00f6gerung, damit\u2026",
+      "_origin": "ast",
+      "community": 1,
+      "community_name": "._on_deleted",
+      "file_type": "rationale",
+      "norm_label": "ordner nach losch-aktion automatisch neu einscannen. kurze verzogerung, damit...",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L427"
+    },
+    {
+      "id": "temp_reiniger_rationale_390",
       "label": "Zeitstempel als \u201evor X Sekunden/Minuten/Stunden\" (deutsch).",
       "_origin": "ast",
       "community": 2,
-      "community_name": "._on_deleted",
+      "community_name": "._status_ticker",
       "file_type": "rationale",
       "norm_label": "zeitstempel als \u201evor x sekunden/minuten/stunden\" (deutsch).",
       "source_file": "temp_reiniger.py",
-      "source_location": "L389"
+      "source_location": "L390"
     },
     {
-      "id": "temp_reiniger_rationale_405",
+      "id": "temp_reiniger_rationale_406",
       "label": "Refresh-Feedback: aktualisiert \u201evor X Sekunden\" (nur Bereit-Zustand).",
       "_origin": "ast",
       "community": 2,
-      "community_name": "._on_deleted",
+      "community_name": "._status_ticker",
       "file_type": "rationale",
       "norm_label": "refresh-feedback: aktualisiert \u201evor x sekunden\" (nur bereit-zustand).",
       "source_file": "temp_reiniger.py",
-      "source_location": "L405"
+      "source_location": "L406"
     },
     {
       "id": "temp_reiniger_rationale_115",
@@ -648,7 +672,7 @@
       "node_kind": "heading",
       "norm_label": "sicherheitsregeln (gebaut)",
       "source_file": "DESIGN.md",
-      "source_location": "L80"
+      "source_location": "L82"
     },
     {
       "id": "design_signature_das_memorale",
@@ -685,6 +709,28 @@
       "norm_label": "zustande",
       "source_file": "DESIGN.md",
       "source_location": "L68"
+    },
+    {
+      "id": "temp_reiniger_rationale_418",
+      "label": "Angeh\u00e4ngten Auto-Rescan (nach L\u00f6sch-Aktion) abbrechen.",
+      "_origin": "ast",
+      "community": 7,
+      "community_name": "TempApp",
+      "file_type": "rationale",
+      "norm_label": "angehangten auto-rescan (nach losch-aktion) abbrechen.",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L418"
+    },
+    {
+      "id": "temp_reiniger_rationale_464",
+      "label": "Zwei-Stufen-Best\u00e4tigung: Button kurz armieren.",
+      "_origin": "ast",
+      "community": 7,
+      "community_name": "TempApp",
+      "file_type": "rationale",
+      "norm_label": "zwei-stufen-bestatigung: button kurz armieren.",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L464"
     },
     {
       "id": "product_chosen_direction",
@@ -805,7 +851,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L663",
+      "source_location": "L692",
       "weight": 1.0
     },
     {
@@ -817,7 +863,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L308",
+      "source_location": "L309",
       "weight": 1.0
     },
     {
@@ -829,7 +875,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L312",
+      "source_location": "L313",
       "weight": 1.0
     },
     {
@@ -841,7 +887,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L332",
+      "source_location": "L333",
       "weight": 1.0
     },
     {
@@ -853,7 +899,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L290",
+      "source_location": "L291",
       "weight": 1.0
     },
     {
@@ -865,7 +911,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L366",
+      "source_location": "L367",
       "weight": 1.0
     },
     {
@@ -877,7 +923,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L255",
+      "source_location": "L256",
       "weight": 1.0
     },
     {
@@ -889,7 +935,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L257",
+      "source_location": "L258",
       "weight": 1.0
     },
     {
@@ -901,7 +947,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L258",
+      "source_location": "L259",
       "weight": 1.0
     },
     {
@@ -913,7 +959,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L259",
+      "source_location": "L260",
       "weight": 1.0
     },
     {
@@ -925,7 +971,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L260",
+      "source_location": "L261",
       "weight": 1.0
     },
     {
@@ -937,7 +983,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L595",
+      "source_location": "L622",
       "weight": 1.0
     },
     {
@@ -949,7 +995,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L600",
+      "source_location": "L627",
+      "weight": 1.0
+    },
+    {
+      "source": "temp_reiniger_tempapp_do_delete",
+      "target": "temp_reiniger_tempapp_cancel_rescan",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L599",
       "weight": 1.0
     },
     {
@@ -961,7 +1019,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L573",
+      "source_location": "L600",
       "weight": 1.0
     },
     {
@@ -973,7 +1031,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L575",
+      "source_location": "L602",
       "weight": 1.0
     },
     {
@@ -985,7 +1043,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L223",
+      "source_location": "L224",
       "weight": 1.0
     },
     {
@@ -997,7 +1055,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L237",
+      "source_location": "L238",
       "weight": 1.0
     },
     {
@@ -1009,7 +1067,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L238",
+      "source_location": "L239",
       "weight": 1.0
     },
     {
@@ -1021,7 +1079,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L239",
+      "source_location": "L240",
       "weight": 1.0
     },
     {
@@ -1033,7 +1091,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L559",
+      "source_location": "L585",
       "weight": 1.0
     },
     {
@@ -1045,7 +1103,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L547",
+      "source_location": "L573",
       "weight": 1.0
     },
     {
@@ -1057,7 +1115,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L548",
+      "source_location": "L574",
       "weight": 1.0
     },
     {
@@ -1069,7 +1127,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L550",
+      "source_location": "L576",
+      "weight": 1.0
+    },
+    {
+      "source": "temp_reiniger_tempapp_on_close",
+      "target": "temp_reiniger_tempapp_cancel_rescan",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L652",
       "weight": 1.0
     },
     {
@@ -1081,7 +1151,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L609",
+      "source_location": "L636",
       "weight": 1.0
     },
     {
@@ -1093,7 +1163,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L609",
+      "source_location": "L636",
       "weight": 1.0
     },
     {
@@ -1105,19 +1175,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L613",
+      "source_location": "L640",
       "weight": 1.0
     },
     {
       "source": "temp_reiniger_tempapp_on_deleted",
-      "target": "temp_reiniger_tempapp_scan_all",
+      "target": "temp_reiniger_tempapp_schedule_rescan",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L619",
+      "source_location": "L647",
       "weight": 1.0
     },
     {
@@ -1129,7 +1199,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L517",
+      "source_location": "L543",
       "weight": 1.0
     },
     {
@@ -1141,7 +1211,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L519",
+      "source_location": "L545",
       "weight": 1.0
     },
     {
@@ -1153,7 +1223,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L521",
+      "source_location": "L547",
       "weight": 1.0
     },
     {
@@ -1165,7 +1235,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L529",
+      "source_location": "L555",
       "weight": 1.0
     },
     {
@@ -1177,7 +1247,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L536",
+      "source_location": "L562",
       "weight": 1.0
     },
     {
@@ -1189,7 +1259,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L470",
+      "source_location": "L495",
+      "weight": 1.0
+    },
+    {
+      "source": "temp_reiniger_tempapp_scan_all",
+      "target": "temp_reiniger_tempapp_cancel_rescan",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L496",
       "weight": 1.0
     },
     {
@@ -1201,7 +1283,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L473",
+      "source_location": "L499",
       "weight": 1.0
     },
     {
@@ -1213,7 +1295,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L488",
+      "source_location": "L514",
       "weight": 1.0
     },
     {
@@ -1225,7 +1307,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L493",
+      "source_location": "L519",
+      "weight": 1.0
+    },
+    {
+      "source": "temp_reiniger_tempapp_schedule_rescan",
+      "target": "temp_reiniger_tempapp_cancel_rescan",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "temp_reiniger.py",
+      "source_location": "L434",
       "weight": 1.0
     },
     {
@@ -1237,7 +1331,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L425",
+      "source_location": "L450",
       "weight": 1.0
     },
     {
@@ -1249,7 +1343,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L409",
+      "source_location": "L410",
       "weight": 1.0
     },
     {
@@ -1261,7 +1355,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L411",
+      "source_location": "L412",
       "weight": 1.0
     },
     {
@@ -1273,7 +1367,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "temp_reiniger.py",
-      "source_location": "L412",
+      "source_location": "L413",
       "weight": 1.0
     },
     {
@@ -1372,7 +1466,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "DESIGN.md",
-      "source_location": "L80",
+      "source_location": "L82",
       "weight": 1.0
     },
     {
@@ -1449,7 +1543,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L627",
+      "source_location": "L656",
       "weight": 1.0
     },
     {
@@ -1460,7 +1554,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L659",
+      "source_location": "L688",
       "weight": 1.0
     },
     {
@@ -1504,7 +1598,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L242",
+      "source_location": "L243",
       "weight": 1.0
     },
     {
@@ -1515,7 +1609,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L249",
+      "source_location": "L250",
       "weight": 1.0
     },
     {
@@ -1526,7 +1620,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L262",
+      "source_location": "L263",
       "weight": 1.0
     },
     {
@@ -1537,7 +1631,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L294",
+      "source_location": "L295",
       "weight": 1.0
     },
     {
@@ -1548,7 +1642,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L342",
+      "source_location": "L343",
       "weight": 1.0
     },
     {
@@ -1559,7 +1653,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L370",
+      "source_location": "L371",
       "weight": 1.0
     },
     {
@@ -1570,7 +1664,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L380",
+      "source_location": "L381",
       "weight": 1.0
     },
     {
@@ -1581,7 +1675,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L385",
+      "source_location": "L386",
       "weight": 1.0
     },
     {
@@ -1592,7 +1686,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L388",
+      "source_location": "L389",
       "weight": 1.0
     },
     {
@@ -1603,7 +1697,29 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L404",
+      "source_location": "L405",
+      "weight": 1.0
+    },
+    {
+      "source": "temp_reiniger_tempapp",
+      "target": "temp_reiniger_tempapp_cancel_rescan",
+      "relation": "method",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "temp_reiniger.py",
+      "source_location": "L417",
+      "weight": 1.0
+    },
+    {
+      "source": "temp_reiniger_tempapp",
+      "target": "temp_reiniger_tempapp_schedule_rescan",
+      "relation": "method",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "temp_reiniger.py",
+      "source_location": "L426",
       "weight": 1.0
     },
     {
@@ -1614,7 +1730,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L416",
+      "source_location": "L441",
       "weight": 1.0
     },
     {
@@ -1625,7 +1741,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L427",
+      "source_location": "L452",
       "weight": 1.0
     },
     {
@@ -1636,7 +1752,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L438",
+      "source_location": "L463",
       "weight": 1.0
     },
     {
@@ -1647,7 +1763,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L448",
+      "source_location": "L473",
       "weight": 1.0
     },
     {
@@ -1658,7 +1774,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L469",
+      "source_location": "L494",
       "weight": 1.0
     },
     {
@@ -1669,7 +1785,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L482",
+      "source_location": "L508",
       "weight": 1.0
     },
     {
@@ -1680,7 +1796,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L497",
+      "source_location": "L523",
       "weight": 1.0
     },
     {
@@ -1691,7 +1807,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L542",
+      "source_location": "L568",
       "weight": 1.0
     },
     {
@@ -1702,7 +1818,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L552",
+      "source_location": "L578",
       "weight": 1.0
     },
     {
@@ -1713,7 +1829,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L572",
+      "source_location": "L598",
       "weight": 1.0
     },
     {
@@ -1724,7 +1840,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L580",
+      "source_location": "L607",
       "weight": 1.0
     },
     {
@@ -1735,7 +1851,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L604",
+      "source_location": "L631",
       "weight": 1.0
     },
     {
@@ -1746,7 +1862,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L622",
+      "source_location": "L650",
       "weight": 1.0
     },
     {
@@ -1805,47 +1921,69 @@
       "weight": 1.0
     },
     {
-      "source": "temp_reiniger_rationale_389",
+      "source": "temp_reiniger_rationale_390",
       "target": "temp_reiniger_tempapp_time_ago",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L389",
+      "source_location": "L390",
       "weight": 1.0
     },
     {
-      "source": "temp_reiniger_rationale_405",
+      "source": "temp_reiniger_rationale_406",
       "target": "temp_reiniger_tempapp_status_ticker",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L405",
+      "source_location": "L406",
       "weight": 1.0
     },
     {
-      "source": "temp_reiniger_rationale_439",
+      "source": "temp_reiniger_rationale_418",
+      "target": "temp_reiniger_tempapp_cancel_rescan",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "temp_reiniger.py",
+      "source_location": "L418",
+      "weight": 1.0
+    },
+    {
+      "source": "temp_reiniger_rationale_427",
+      "target": "temp_reiniger_tempapp_schedule_rescan",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "temp_reiniger.py",
+      "source_location": "L427",
+      "weight": 1.0
+    },
+    {
+      "source": "temp_reiniger_rationale_464",
       "target": "temp_reiniger_tempapp_arm",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L439",
+      "source_location": "L464",
       "weight": 1.0
     },
     {
-      "source": "temp_reiniger_rationale_628",
+      "source": "temp_reiniger_rationale_657",
       "target": "temp_reiniger_dev_screenshot",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "temp_reiniger.py",
-      "source_location": "L628",
+      "source_location": "L657",
       "weight": 1.0
     },
     {
@@ -1976,5 +2114,5 @@
       "source_file": "PRODUCT.md"
     }
   ],
-  "built_at_commit": "be77c64970085b165336ad7ad32ad84bf66ed980"
+  "built_at_commit": "86019ea5f601fe504b9957b37b5228435e3b16cf"
 }

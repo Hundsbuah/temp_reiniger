@@ -41,12 +41,16 @@ FINISH
 
 SICHERHEIT
   - Es wird beim Start NIE automatisch gelöscht.
-  - Löschen erfolgt nur durch expliziten Button-Klick (zwei Schritte).
+  - Löschen erfolgt nur durch explizite Auswahl: Button (zwei Schritte) oder
+    Tray-Rechtsklick (explizite Menüwahl).
   - Wurzelmappen selbst werden NIE gelöscht — nur deren Inhalt.
   - Gesperrte Dateien werden übersprungen (kein Abbruch).
+  - Minimieren/schließen -> Fenster in den System-Tray; dort per Rechtsklick
+    die 4 Lösch-Optionen + "Fenster öffnen" + "Beenden".
 """
 
 import os
+import queue
 import time
 import threading
 import traceback
@@ -171,6 +175,22 @@ def temp_definitions():
     return defs
 
 
+def make_tray_icon():
+    """Tray-Icon (PIL): Teal-Platte mit weißem Papierkorb (64x64)."""
+    from PIL import Image, ImageDraw
+    S = 64
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([2, 2, 61, 61], radius=14, fill=(18, 150, 176, 255))
+    d.rectangle([14, 20, 50, 27], fill=(255, 255, 255, 255))      # Deckel
+    d.rectangle([28, 13, 36, 20], fill=(255, 255, 255, 255))      # Griff
+    d.polygon([(18, 31), (46, 31), (42, 54), (22, 54)],
+              fill=(255, 255, 255, 255))                          # Korpus
+    for x in (28, 32, 36):
+        d.line([(x, 36), (x, 50)], fill=(18, 150, 176, 255), width=2)
+    return img
+
+
 # --------------------------------------------------------------------------- #
 #  Kleines Tooltip (voller Pfad auf Hover)
 # --------------------------------------------------------------------------- #
@@ -218,12 +238,17 @@ class TempApp(ctk.CTk):
         self._last_total = None
         self._status_mode = None
         self._rescan_job = None
+        self._tray_queue = queue.Queue()
+        self._tray_icon = None
+        self._tray_ready = False
+        self._tray_active = False
 
         ctk.set_appearance_mode("Light")
         self.title("Temp-Reiniger")
         self._center(self, 1060, 600)
         self.minsize(920, 540)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.bind("<Unmap>", self._on_unmap)
 
         # Fonts (native Windows-Schriftarten; Fallback automatisch)
         self.f_title = ctk.CTkFont(family="Bahnschrift", size=16, weight="bold")
@@ -238,6 +263,8 @@ class TempApp(ctk.CTk):
         self._build_ui()
         self._scan_all()   # beim Start nur einlesen — niemals löschen
         self._status_ticker()
+        self._start_tray()
+        self._poll_tray()
 
     # ------------------------------------------------------------- layout
     def _center(self, win, w, h):
@@ -646,11 +673,118 @@ class TempApp(ctk.CTk):
         # freigemachte Größe (MB/GB) im Status sichtbar bleibt.
         self._schedule_rescan(3000)
 
-    # ------------------------------------------------------------- close
-    def _on_close(self):
+    # ------------------------------------------------------------- Tray
+    def _start_tray(self):
+        """System-Tray-Icon in einem eigenen Thread starten (Windows)."""
+        try:
+            import pystray
+        except Exception:
+            return
+        def run():
+            try:
+                self._tray_icon = pystray.Icon(
+                    "Temp-Reiniger", make_tray_icon(), "Temp-Reiniger",
+                    self._build_menu(),
+                )
+                self._tray_ready = True
+                self._tray_active = True
+                self._tray_icon.run()
+            except Exception:
+                self._tray_active = False
+        threading.Thread(target=run, name="tray", daemon=True).start()
+
+    def _build_menu(self):
+        """Rechtsklick-Menü: die 4 Lösch-Optionen + Öffnen + Beenden."""
+        import pystray
+        defs = temp_definitions()
+        return pystray.Menu(
+            pystray.MenuItem(f"{defs[0][0]} leeren",
+                             lambda i, it: self._tray_action("card", 0)),
+            pystray.MenuItem(f"{defs[1][0]} leeren",
+                             lambda i, it: self._tray_action("card", 1)),
+            pystray.MenuItem(f"{defs[2][0]} leeren",
+                             lambda i, it: self._tray_action("card", 2)),
+            pystray.MenuItem("Alle Temp-Ordnere leeren",
+                             lambda i, it: self._tray_action("all", None)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Fenster öffnen",
+                             lambda i, it: self._tray_show()),
+            pystray.MenuItem("Temp-Reiniger beenden",
+                             lambda i, it: self._tray_quit()),
+        )
+
+    def _tray_action(self, kind, idx):
+        """Tray-Menü: Löschen ausführen (direkt — explizite Menüwahl)."""
+        if self._closing:
+            return
+        target = {"all": True} if kind == "all" else {"idx": idx}
+        self._tray_queue.put(lambda: self._do_delete(target))
+
+    def _tray_show(self):
+        if self._closing:
+            return
+        self._tray_queue.put(self._show_window)
+
+    def _tray_quit(self):
+        if self._closing:
+            return
+        self._tray_queue.put(self._do_quit)
+
+    def _show_window(self):
+        if self._closing:
+            return
+        try:
+            self.deiconify()
+            self.state("normal")
+            self.lift()
+            self.focus_force()
+        except tk.TclError:
+            pass
+
+    def _poll_tray(self):
+        """Haupt-Thread-Poller: führt Tray-Aktionen sicher im Tk-Thread aus."""
+        if self._closing:
+            return
+        try:
+            while True:
+                fn = self._tray_queue.get_nowait()
+                fn()
+        except queue.Empty:
+            pass
+        self.after(120, self._poll_tray)
+
+    def _on_unmap(self, event):
+        """Minimieren -> in den Tray verschwinden (Fenster ausblenden)."""
+        if self._closing or not getattr(self, "_tray_active", False):
+            return
+        try:
+            if self.attributes("-iconic"):
+                self.withdraw()
+        except tk.TclError:
+            pass
+
+    def _do_quit(self):
+        if self._closing:
+            return
         self._closing = True
         self._cancel_rescan()
+        icon = getattr(self, "_tray_icon", None)
+        if icon is not None:
+            try:
+                icon.stop()
+            except Exception:
+                pass
         self.destroy()
+
+    # ------------------------------------------------------------- close
+    def _on_close(self):
+        # Fenster schließen -> in Tray minimieren (Beenden über Tray-Menü)
+        if self._closing:
+            return
+        if getattr(self, "_tray_active", False):
+            self.withdraw()
+        else:
+            self._do_quit()
 
 
 def _dev_screenshot(app, out_path, mock):
@@ -691,24 +825,27 @@ def main():
     launch_check = os.environ.get("TEMP_REINIGER_LAUNCH_CHECK")
     app = TempApp()
     if launch_check:
-        # Nur: UI aufbauen, Events kurz abarbeiten, sauber beenden (kein Löschen).
+        # Nur: UI + Tray-Icon aufbauen, kurz warten, sauber beenden (kein Löschen).
         def check():
-            ok = True
-            for _ in range(15):
+            tray_ok = False
+            for _ in range(40):  # bis ~2 s auf das Tray-Icon warten
                 try:
                     app.update()
                 except tk.TclError:
-                    ok = False
                     break
                 time.sleep(0.05)
-            app.destroy()
+                tray_ok = getattr(app, "_tray_ready", False)
+                if tray_ok:
+                    break
+            app._do_quit()
+            label = "OK" if tray_ok else "NO-TRAY"
             try:
                 with open(os.path.join(os.getcwd(), "launch_check.txt"), "w",
                           encoding="utf-8") as f:
-                    f.write("OK" if ok else "TCL-ERROR")
+                    f.write(label)
             except Exception:
                 pass
-            print("[dev] LAUNCH-OK" if ok else "[dev] LAUNCH-TCL-ERROR")
+            print("[dev] LAUNCH-" + label)
         app.after(2500, check)
     elif shot:
         def run_capture():
