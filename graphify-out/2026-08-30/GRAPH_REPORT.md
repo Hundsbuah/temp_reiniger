@@ -1,13 +1,18 @@
 # Graph Report - temp_delete  (2026-08-30)
 
 ## Corpus Check
-- 3 files · ~3,638 words
+- 3 files · ~3,793 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
 - 58 nodes · 95 edges · 9 communities (4 shown, 5 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.7)
 - Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `af408c16`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - temp_reiniger.py

@@ -213,6 +213,10 @@ class TempApp(ctk.CTk):
         self._all_armed = False
         self._all_armed_job = None
         self._prev_total = 0
+        self._last_scan_ts = None
+        self._last_scan_str = None
+        self._last_total = None
+        self._status_mode = None
 
         ctk.set_appearance_mode("Light")
         self.title("Temp-Reiniger")
@@ -232,6 +236,7 @@ class TempApp(ctk.CTk):
 
         self._build_ui()
         self._scan_all()   # beim Start nur einlesen — niemals löschen
+        self._status_ticker()
 
     # ------------------------------------------------------------- layout
     def _center(self, win, w, h):
@@ -380,6 +385,34 @@ class TempApp(ctk.CTk):
     def _set_status(self, msg, color=INK_SOFT):
         self.status_msg.configure(text=msg, text_color=color)
 
+    def _time_ago(self, ts):
+        """Zeitstempel als „vor X Sekunden/Minuten/Stunden" (deutsch)."""
+        if ts is None:
+            return ""
+        s = max(0, int(time.time() - ts))
+        if s < 60:
+            unit = "Sekunde" if s == 1 else "Sekunden"
+            return f"vor {s} {unit}"
+        m = s // 60
+        if m < 60:
+            unit = "Minute" if m == 1 else "Minuten"
+            return f"vor {m} {unit}"
+        h = m // 60
+        unit = "Stunde" if h == 1 else "Stunden"
+        return f"vor {h} {unit}"
+
+    def _status_ticker(self):
+        """Refresh-Feedback: aktualisiert „vor X Sekunden" (nur Bereit-Zustand)."""
+        if self._closing:
+            return
+        if self._status_mode == "ready" and self._last_scan_ts is not None:
+            self._set_status(
+                f"Bereit · eingelesen {self._last_scan_str} · "
+                f"{self._time_ago(self._last_scan_ts)} · "
+                f"{format_bytes(self._last_total)} gesamt"
+            )
+        self.after(1000, self._status_ticker)
+
     def _set_busy(self, busy):
         self._busy = busy
         state = "disabled" if busy else "normal"
@@ -435,6 +468,7 @@ class TempApp(ctk.CTk):
     # ------------------------------------------------------------- Scan
     def _scan_all(self):
         self._set_busy(True)
+        self._status_mode = "scanning"
         self.scan_button.configure(text="Aktualisiere …")
         self._set_status("Wird eingelesen …", INK_SOFT)
         self.status_dot.configure(text_color=WARN)
@@ -495,9 +529,14 @@ class TempApp(ctk.CTk):
         self._set_busy(False)
         self.scan_button.configure(text="Aktualisieren")
         self.status_dot.configure(text_color=OK)
-        now = time.strftime("%H:%M")
-        self._set_status(f"Bereit · eingelesen {now} · {format_bytes(total)} gesamt",
-                         INK_SOFT)
+        self._last_scan_ts = time.time()
+        self._last_scan_str = time.strftime("%H:%M")
+        self._last_total = total
+        self._status_mode = "ready"
+        self._set_status(
+            f"Bereit · eingelesen {self._last_scan_str} · vor 0 Sekunden · "
+            f"{format_bytes(total)} gesamt", INK_SOFT
+        )
 
     # ------------------------------------------------------------- Delete
     def _on_card_delete(self, idx):
@@ -569,6 +608,7 @@ class TempApp(ctk.CTk):
                                     hover_color=ACCENT_D)
         msg = (f"{format_bytes(freed)} entfernt · {format_count(deleted)} "
                f"Dateien")
+        self._status_mode = "result"
         if skipped:
             self._set_status(msg + f" · {format_count(skipped)} übersprungen",
                              OK if skipped == 0 else WARN)
