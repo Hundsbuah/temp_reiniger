@@ -43,7 +43,8 @@ Ordner ist, und entscheidest gezielt, was geleert wird.
 ## 🚀 Installation & Start
 
 ### Option A — Fertige EXE (empfohlen)
-Doppelklick auf **`dist\Temp-Reiniger.exe`**. Single-File, ohne Python-Installation.
+Die fertige EXE als **GitHub-Release** laden: **[Temp-Reiniger.exe](https://github.com/Hundsbuah/temp_reiniger/releases)**
+(v1.0.0). Single-File, ohne Python-Installation — einmal klicken und los.
 
 ### Option B — Aus dem Quellcode
 ```bash
@@ -59,6 +60,9 @@ pip install pyinstaller
 pyinstaller --onefile --windowed --clean --name "Temp-Reiniger" temp_reiniger.py
 ```
 → Ergebnis: **`dist\Temp-Reiniger.exe`** (eine einzige EXE).
+
+> `dist/` ist im Repo git-ignoriert — die fertige EXE wird als **GitHub-Release**
+> ausgeliefert, nicht als Datei im Repository.
 
 ## 🖥️ System-Tray
 
@@ -96,7 +100,7 @@ läuft als **Tray-Icon** weiter:
 | `DESIGN.md` | Design-System: Farben, Typo, Layout, Zustände, Motion |
 | `PRODUCT.md` | Produkt-Kontext, Zielgruppe, Annahmen |
 | `requirements.txt` | Abhängigkeiten für den Quellcode-Start |
-| `dist/` | gebaute Single-EXE |
+| `dist/` | lokale Build-Ausgabe (git-ignoriert; EXE wird als Release ausgeliefert) |
 | `graphify-out/` | Wissensgraph des Projekts (Graphify) |
 
 **Abhängigkeiten:** `customtkinter` (UI), `pystray` + `pywin32` (Tray),
