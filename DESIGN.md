@@ -70,9 +70,11 @@ sinken Zahl und Leiste (Tween vom alten zum neuen Wert) — das „Leerziehen".
   die drei Ordner (reiner Refresh, **kein Löschen**). Während Scan:
   deaktiviert + Text „Aktualisiere …
 - **Scannen:** Status „Wird eingelesen …", Zahlen `…`, Punkte amber.
-- **Bereit:** `● Bereit · eingelesen HH:MM · X gesamt`.
+- **Bereit:** `● Bereit · eingelesen HH:MM · vor X Sekunden · X gesamt`
+  (das „vor X Sekunden" zählt live hoch, 1-s-Ticker).
 - **Löschen (armiert):** Button amber, „Wirklich löschen?" / „Wirklich alles löschen?".
-- **Entfernt:** Status grün `X entfernt · N Dateien`.
+- **Entfernt:** Status grün `X entfernt · N Dateien`; bleibt ~3 s sichtbar, dann
+  **automatischer Re-Scan** der Ordner (Größen fallen auf den Rest).
 - **Übersprungen:** Status amber `… · K übersprungen` (gesperrte Dateien).
 - **Duplikat:** Hinweis `zwei Pfade zeigen auf denselben Ordner`.
 - **Leerer Ordner:** `0 B`, Leiste leer (kein Fehlerzustand).
@@ -83,4 +85,6 @@ sinken Zahl und Leiste (Tween vom alten zum neuen Wert) — das „Leerziehen".
 - Wurzelmappen bleiben immer — nur der Inhalt wird entfernt.
 - Gesperrte/in-Benutzung Dateien werden übersprungen, kein Abbruch.
 - `C:\Windows\Temp` ohne Admin nur teilweise leerbar (Überspringen).
+- Nach dem Löschen werden die Ordner **automatisch neu gescannt** (nach ~3 s,
+  damit die freigemachte Größe sichtbar bleibt).
 - UI bleibt reaktionsschnell (Worker-Thread + `after`-Marshalling).

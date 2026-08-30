@@ -217,6 +217,7 @@ class TempApp(ctk.CTk):
         self._last_scan_str = None
         self._last_total = None
         self._status_mode = None
+        self._rescan_job = None
 
         ctk.set_appearance_mode("Light")
         self.title("Temp-Reiniger")
@@ -413,6 +414,30 @@ class TempApp(ctk.CTk):
             )
         self.after(1000, self._status_ticker)
 
+    def _cancel_rescan(self):
+        """Angehängten Auto-Rescan (nach Lösch-Aktion) abbrechen."""
+        if getattr(self, "_rescan_job", None):
+            try:
+                self.after_cancel(self._rescan_job)
+            except Exception:
+                pass
+            self._rescan_job = None
+
+    def _schedule_rescan(self, delay_ms=3000):
+        """Ordner nach Lösch-Aktion automatisch neu einscannen.
+
+        Kurze Verzögerung, damit die freigemachte Größe (MB/GB) im Status
+        sichtbar bleibt. Ein vorher angehängter Rescan wird ersetzt.
+        """
+        if self._closing:
+            return
+        self._cancel_rescan()
+        def do():
+            self._rescan_job = None
+            if not self._closing:
+                self._scan_all()
+        self._rescan_job = self.after(delay_ms, do)
+
     def _set_busy(self, busy):
         self._busy = busy
         state = "disabled" if busy else "normal"
@@ -468,6 +493,7 @@ class TempApp(ctk.CTk):
     # ------------------------------------------------------------- Scan
     def _scan_all(self):
         self._set_busy(True)
+        self._cancel_rescan()
         self._status_mode = "scanning"
         self.scan_button.configure(text="Aktualisiere …")
         self._set_status("Wird eingelesen …", INK_SOFT)
@@ -570,6 +596,7 @@ class TempApp(ctk.CTk):
             self._all_armed_job = self.after(3200, revert)
 
     def _do_delete(self, target):
+        self._cancel_rescan()
         self._set_busy(True)
         scope = "alle Temp-Ordner" if target.get("all") else "einen Ordner"
         self._set_status(f"Leere {scope} …", INK_SOFT)
@@ -615,12 +642,14 @@ class TempApp(ctk.CTk):
         else:
             self._set_status(msg, OK)
         self.status_dot.configure(text_color=OK)
-        # frische Größe holen (nur lesen)
-        self._scan_all()
+        # Ordner automatisch neu einscannen — mit kurzer Verzögerung, damit die
+        # freigemachte Größe (MB/GB) im Status sichtbar bleibt.
+        self._schedule_rescan(3000)
 
     # ------------------------------------------------------------- close
     def _on_close(self):
         self._closing = True
+        self._cancel_rescan()
         self.destroy()
 
 
