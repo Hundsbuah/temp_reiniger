@@ -44,6 +44,9 @@ SICHERHEIT
   - Löschen erfolgt nur durch explizite Auswahl: Button (zwei Schritte) oder
     Tray-Rechtsklick (explizite Menüwahl).
   - Wurzelmappen selbst werden NIE gelöscht — nur deren Inhalt.
+  - Symlinks/Junctions werden NIE gefolgt — der Link-Eintrag wird entfernt,
+    das Ziel bleibt unangetastet (Reparse-Point-Prüfung, nicht nur islink:
+    os.path.islink() erkennt auf Windows Junctions NICHT).
   - Gesperrte Dateien werden übersprungen (kein Abbruch).
   - Minimieren/schließen -> Fenster in den System-Tray; dort per Rechtsklick
     die 4 Lösch-Optionen + "Fenster öffnen" + "Beenden".
@@ -63,7 +66,7 @@ import customtkinter as ctk
 # --------------------------------------------------------------------------- #
 #  Version
 # --------------------------------------------------------------------------- #
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 # --------------------------------------------------------------------------- #
 #  Design-Token
@@ -120,18 +123,44 @@ def format_count(n):
     return f"{int(n):,}".replace(",", THIN_SPACE)
 
 
+def _plural_de(n, eins, viele):
+    """Deutsche Pluralwahl: 1 -> Singular, sonst Plural."""
+    return eins if int(n) == 1 else viele
+
+
 # --------------------------------------------------------------------------- #
 #  Datei-Logik (nur lesen / löschen von INHALT, nie die Wurzel)
 # --------------------------------------------------------------------------- #
+def _is_reparse_point(path):
+    """True, wenn `path` ein Reparse-Point ist: Symlink ODER Junction.
+
+    WICHTIG: os.path.islink() erkennt auf Windows echte Symlinks, aber
+    JUNCTIONS (Mount-Point-Reparse-Points) NICHT — os.walk() läuft trotzdem
+    durch sie (das Ziel würde sonst mitgescannt/ gelöscht werden). Deshalb
+    direkt FILE_ATTRIBUTE_REPARSE_POINT (0x400) prüfen. lstat (nicht stat!),
+    damit die ATTRIBUTES des Links selbst und nicht des Ziels gelesen werden.
+    """
+    if os.path.islink(path):
+        return True
+    try:
+        return bool(os.lstat(path).st_file_attributes & 0x400)
+    except (AttributeError, OSError):
+        return False
+
+
 def scan_folder(path):
-    """(gesamte Gröe in Byte, Dateianzahl) eines Ordners zählen.
+    """(gesamte Größe in Byte, Dateianzahl) eines Ordners zählen.
 
     Fehler (z. B. fehlende Rechte beim Einlesen) werden still ignoriert.
+    Reparse-Points (Symlinks/Junctions) werden NICHT gefolgt: ihr Ziel zählt
+    nicht mit (prunen via dirnames, damit os.walk nicht hineinläuft).
     """
     total, count = 0, 0
     if not path or not os.path.isdir(path):
         return 0, 0
-    for dirpath, _dirnames, filenames in os.walk(path, onerror=lambda e: None):
+    for dirpath, dirnames, filenames in os.walk(path, onerror=lambda e: None):
+        dirnames[:] = [d for d in dirnames
+                       if not _is_reparse_point(os.path.join(dirpath, d))]
         for name in filenames:
             fp = os.path.join(dirpath, name)
             try:
@@ -147,18 +176,43 @@ def delete_folder_contents(top):
     """Nur den INHALT von `top` löschen. `top` selbst bleibt bestehen.
 
     Rückgabe: (freier Byte, gelöschte Dateien, übersprungene Einträge).
-    Sperrungen (in Benutzung / keine Rechte) werden übersprungen.
-    Symlinks werden nie gefolgt: ein Symlink (auf Datei ODER Ordner) wird als
-    Eintrag entfernt, das Ziel bleibt unangetastet. Eine WURZEL, die selbst
-    ein Symlink ist, wird nicht angefasst (Ziel wäre unbekannt).
+    Sperrungen (in Benutzung / keine Rechte) werden übersprungen und
+    (als gesperrte Einträge) in `skipped` gezählt.
+    Reparse-Points (Symlinks ODER Junctions) werden nie gefolgt: der
+    Link-Eintrag wird als Eintrag entfernt, das Ziel bleibt unangetastet.
+    os.path.islink() erkennt Junctions auf Windows NICHT — deshalb
+    _is_reparse_point(). Eine WURZEL, die selbst ein Link/Junction ist,
+    wird nicht angefasst (Ziel wäre unbekannt).
     """
     top = os.path.abspath(top)
     freed = deleted = skipped = 0
     if not os.path.isdir(top):
         return 0, 0, 0
-    if os.path.islink(top):
+    if _is_reparse_point(top):
         return 0, 0, 0
-    for dirpath, _dirnames, filenames in os.walk(top, topdown=False):
+    # WICHTIG: topdown=True + in-place-Pruning der dirnames. os.walk läuft
+    # auf Windows durch Junctions (is_symlink()==False) — nur ein PRUNE
+    # verhindert, dass es in das Ziel hineingeht. (topdown=False wäre zu
+    # spät: die Kinder — d. h. die ZIEL-Inhalte — kämen zuerst.)
+    # Echte Ordner werden erst im 2. Durchgang bottom-up rmdir'ed
+    # (topdown=True: beim Besuch wären die Kinder noch da).
+    to_rmdir = []
+    for dirpath, dirnames, filenames in os.walk(top, topdown=True,
+                                                onerror=lambda e: None):
+        keep = []
+        for d in dirnames:
+            dp = os.path.join(dirpath, d)
+            if _is_reparse_point(dp):
+                # Link-EINTRAG entfernen; os.rmdir trifft nur den Link,
+                # nie das Ziel (empirisch verifiziert)
+                try:
+                    os.rmdir(dp)
+                    deleted += 1
+                except OSError:
+                    skipped += 1
+            else:
+                keep.append(d)
+        dirnames[:] = keep
         for name in filenames:
             fp = os.path.join(dirpath, name)
             try:
@@ -177,31 +231,23 @@ def delete_folder_contents(top):
             except (PermissionError, OSError):
                 skipped += 1
         if dirpath != top:
-            if os.path.islink(dirpath):
-                # Symlink-auf-Ordner: NUR den Link entfernen (os.remove trifft
-                # den Link, nie das Ziel); read-only-Link -> chmod-Retry wie bei Dateien
-                try:
-                    os.remove(dirpath)
-                except PermissionError:
-                    try:
-                        os.chmod(dirpath, stat.S_IWRITE)
-                        os.remove(dirpath)
-                    except OSError:
-                        skipped += 1
-                except OSError:
-                    skipped += 1
-            else:
-                try:
-                    os.rmdir(dirpath)      # nur, wenn leer; Wurzel bleibt
-                except PermissionError:
-                    # Windows: read-only-Ordner -> Write-Bit setzen und erneut entfernen
-                    try:
-                        os.chmod(dirpath, stat.S_IWRITE)
-                        os.rmdir(dirpath)
-                    except OSError:
-                        pass
-                except OSError:
-                    pass
+            to_rmdir.append(dirpath)
+    # 2. Durchgang: bottom-up (tiefere Pfade sind länger) — jetzt sind alle
+    # Inhalte weg, die Ordner sind leer. Wurzel bleibt immer stehen.
+    for dirpath in sorted(to_rmdir, key=len, reverse=True):
+        try:
+            os.rmdir(dirpath)
+        except FileNotFoundError:
+            pass                        # war schon entfernt
+        except PermissionError:
+            # Windows: read-only-Ordner -> Write-Bit setzen und erneut entfernen
+            try:
+                os.chmod(dirpath, stat.S_IWRITE)
+                os.rmdir(dirpath)
+            except OSError:
+                skipped += 1            # gesperrt -> zählt mit (bleibt stehen)
+        except OSError:
+            skipped += 1                # nicht leer (gesperrte Kinder) -> zählt mit
     return freed, deleted, skipped
 
 
@@ -538,6 +584,18 @@ class TempApp(ctk.CTk):
         self.total_button.configure(state=state)
         self.scan_button.configure(state=state)
         if busy:
+            # Konsistenz: BEIDES disarmen — Karten UND "Alle löschen"-Arming
+            # (sonst überlebt ein "stale" Arm-State den Scan und ein Klick
+            # danach könnte mit alter Bestätigung alles löschen)
+            self._all_armed = False
+            if getattr(self, "_all_armed_job", None):
+                try:
+                    self.after_cancel(self._all_armed_job)
+                except Exception:
+                    pass
+                self._all_armed_job = None
+            self.total_button.configure(text="Alle löschen", fg_color=ACCENT,
+                                        hover_color=ACCENT_D)
             for c in self.cards:
                 self._disarm(c)
 
@@ -586,6 +644,13 @@ class TempApp(ctk.CTk):
                     done()
         step(0)
 
+    def _reset_tween(self, key):
+        """Laufenden Tween für `key` abbrechen (Token erhöhen) und den
+        zuletzt angezeigten Wert zurücksetzen — neue Scans starten dann
+        sauber beim Placeholder (kein Überblenden durch alten Tween)."""
+        self._tween_tokens[key] = self._tween_tokens.get(key, 0) + 1
+        self._tween_last[key] = 0.0
+
     # ------------------------------------------------------------- Scan
     def _scan_all(self):
         self._set_busy(True)
@@ -595,23 +660,30 @@ class TempApp(ctk.CTk):
         self._set_status("Wird eingelesen …", INK_SOFT)
         self.status_dot.configure(text_color=WARN)
         self.status_head.configure(text="Liest …")
-        for c in self.cards:
+        for i, c in enumerate(self.cards):
+            self._reset_tween(f"bar{i}")
+            self._reset_tween(f"num{i}")
             c["num"].configure(text="…")
             c["count"].configure(text="—")
             c["bar"].set(0.0)
+        self._reset_tween("total")
         self.total_num.configure(text="…")
         threading.Thread(target=self._scan_worker, daemon=True).start()
 
     def _scan_worker(self):
+        # Memo keyt nach REALPATH: auf Standard-Maschinen zeigen %TEMP% und
+        # %LOCALAPPDATA%\Temp auf denselben Ordner -> sonst doppeltes Walken
         memo = {}
         for c in self.cards:
             p = c["path"]
-            if p not in memo:
+            k = os.path.realpath(p) if p else p
+            if k not in memo:
                 try:
-                    memo[p] = scan_folder(p)
+                    memo[k] = scan_folder(p)
                 except Exception:
-                    memo[p] = (0, 0)
-        payload = [(c["idx"], memo.get(c["path"], (0, 0))) for c in self.cards]
+                    memo[k] = (0, 0)
+        payload = [(c["idx"], memo.get(os.path.realpath(c["path"]) if c["path"] else c["path"], (0, 0)))
+                   for c in self.cards]
         # thread-sicher: Ergebnis in Queue legen, Main-Thread führt _on_scanned aus
         self._ui_queue.put(lambda: self._on_scanned(payload))
 
@@ -646,7 +718,8 @@ class TempApp(ctk.CTk):
             self._tween(f"num{i}", prev_b, float(c["bytes"] or 0),
                         lambda v, n=c["num"]: n.configure(text=format_bytes(int(v))),
                         520 + i * 70)
-            c["count"].configure(text=f"{format_count(c['nfiles'])} Dateien")
+            c["count"].configure(text=f"{format_count(c['nfiles'])} "
+                                      f"{_plural_de(c['nfiles'] or 0, 'Datei', 'Dateien')}")
         self._tween("total", float(self._tween_last.get("total", 0)), float(total),
                     lambda v: self.total_num.configure(text=format_bytes(int(v))),
                     560)
@@ -760,14 +833,16 @@ class TempApp(ctk.CTk):
         self.total_button.configure(text="Alle löschen", fg_color=ACCENT,
                                     hover_color=ACCENT_D)
         msg = (f"{format_bytes(freed)} entfernt · {format_count(deleted)} "
-               f"Dateien")
+               f"{_plural_de(deleted, 'Datei', 'Dateien')}")
         self._status_mode = "result"
         if skipped:
+            # Etwas ist geblieben -> amber (MeldUNG UND Punkt konsistent)
             self._set_status(msg + f" · {format_count(skipped)} übersprungen",
-                             OK if skipped == 0 else WARN)
+                             WARN)
+            self.status_dot.configure(text_color=WARN)
         else:
             self._set_status(msg, OK)
-        self.status_dot.configure(text_color=OK)
+            self.status_dot.configure(text_color=OK)
         # Ordner automatisch neu einscannen — mit kurzer Verzögerung, damit die
         # freigemachte Größe (MB/GB) im Status sichtbar bleibt.
         self._schedule_rescan(3000)
@@ -825,7 +900,13 @@ class TempApp(ctk.CTk):
 
     def _confirm_tray_all(self):
         """Tray 'Alle leeren': Bestätigung (läuft im Main-Thread)."""
-        if self._closing or self._busy:
+        if self._closing:
+            return
+        if self._busy:
+            # Nicht stumm verwerfen: wenn kein laufender Scan seine Meldung
+            # gerade zeigt, kurz feedback geben
+            if self._status_mode in ("ready", "result"):
+                self._set_status("Etwas läuft gerade — Aktion verworfen.", WARN)
             return
         if tk_messagebox.askyesno(
             "Alle Temp-Ordner leeren",
@@ -898,6 +979,24 @@ class TempApp(ctk.CTk):
             return
         self._closing = True
         self._cancel_rescan()
+        # Arm-Jobs (Zwei-Stufen-Bestätigung) abbrechen: sonst feuert ein
+        # verbliebener after()-Revert NACH dem destroy und configure() auf
+        # einem zerstörten Widget -> TclError-Noise via report_callback_exception
+        for c in self.cards:
+            if c["armed_job"]:
+                try:
+                    self.after_cancel(c["armed_job"])
+                except Exception:
+                    pass
+                c["armed_job"] = None
+                c["armed"] = False
+        if getattr(self, "_all_armed_job", None):
+            try:
+                self.after_cancel(self._all_armed_job)
+            except Exception:
+                pass
+            self._all_armed_job = None
+        self._all_armed = False
         icon = getattr(self, "_tray_icon", None)
         if icon is not None:
             try:

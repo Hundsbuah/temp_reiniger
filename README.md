@@ -1,6 +1,6 @@
 # 🧹 Temp-Reiniger
 
-**Windows-Tool, das drei Temp-Ordnere auf einen Blick zeigt und sicher leert.**
+**Windows-Tool, das drei Temp-Ordner auf einen Blick zeigt und sicher leert.**
 Kein Blindlöschen, keine Wurzelmappen-Gefahr — du siehst, wie „schwer" jeder
 Ordner ist, und entscheidest gezielt, was geleert wird.
 
@@ -15,7 +15,7 @@ Ordner ist, und entscheidest gezielt, was geleert wird.
 
 ## ✨ Features
 
-- **Drei Temp-Ordnere** als Karten nebeneinander:
+- **Drei Temp-Ordner** als Karten nebeneinander:
 
   | # | Umgebungsvariable | Typischer Pfad |
   |---|---|---|
@@ -44,7 +44,7 @@ Ordner ist, und entscheidest gezielt, was geleert wird.
 
 ### Option A — Fertige EXE (empfohlen)
 Die fertige EXE als **GitHub-Release** laden: **[Temp-Reiniger.exe](https://github.com/Hundsbuah/temp_reiniger/releases)**
-(v1.2.0). Single-File, ohne Python-Installation — einmal klicken und los.
+(v1.2.1). Single-File, ohne Python-Installation — einmal klicken und los.
 
 ### Option B — Aus dem Quellcode
 ```bash
@@ -76,7 +76,7 @@ läuft als **Tray-Icon** weiter:
 - `%TEMP% leeren`
 - `%LOCALAPPDATA%\Temp leeren`
 - `%SystemRoot%\Temp leeren`
-- `Alle Temp-Ordnere leeren`
+- `Alle Temp-Ordner leeren`
 - ──────────
 - `Fenster öffnen`
 - `Temp-Reiniger beenden`
@@ -88,6 +88,11 @@ läuft als **Tray-Icon** weiter:
   werden in jedem Fall übersprungen.
 - **`%TEMP%` und `%LOCALAPPDATA%\Temp`** zeigen häufig auf denselben Ordner. Die
   App erkennt das, zeigt einen Hinweis und leert ihn bei „Alle löschen" nur einmal.
+- **Symlinks/Junctions** im Temp-Inhalt werden nie gefolgt: der Link wird
+  entfernt, das Ziel bleibt unangetastet (auch Junctions, die `islink` nicht
+  sieht — Reparse-Point-Prüfung).
+- **Sehr tiefe Dateipfade (> 260 Zeichen):** Windows-MAX_PATH-Limit — solche
+  Einträge werden übersprungen, die App bricht nie ab.
 - **Gesamt** = Summe der drei sichtbaren Karten (visuell konsistent).
 - Tray- und Button-Löschungen sind **explizite Auswahl**; es gibt keinen
   Auto-Start-Löschmodus.

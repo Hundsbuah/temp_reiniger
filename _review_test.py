@@ -8,6 +8,14 @@ Verhalten auf Win11 (26200) korrigiert:
   Read-only-DATEIEN.
 - os.path.realpath normalisiert auf Windows den Case auf die On-Disk-Schreibung
   -> die Deduplizierung der App ist case-sicher.
+
+2. Review (2026-10-05): neu —
+- Junction-Test (mklink /J, OHNE Admin/Dev-Mode): Regression gegen H1-Bug
+  (os.path.islink() erkennt Junctions NICHT -> os.walk lief durch sie und
+  delete loeschte die ZIEL-Inhalte). Jetzt: _is_reparse_point (0x400) pruenft.
+- locked-File-Test: skipped-Pfad (Handle ohne FILE_SHARE_DELETE -> remove
+  blockiert) — vorher wurde nur der skipped==0-Pfad getestet.
+- PB-/TB-Randwerte von format_bytes.
 """
 import os, sys, stat, time, tempfile, shutil, importlib.util
 
@@ -80,7 +88,7 @@ check("delete: nonexistent=(0,0,0)", tr.delete_folder_contents(os.path.join(BASE
 fb = tr.format_bytes
 check("fmt: 0 B", fb(0) == "0 B", fb(0))
 check("fmt: 999 B", fb(999) == "999 B", fb(999))
-# Regressions-Tests fuenf dem PB-Boundary-Bug (1000..1023 durften nie "PB" sein)
+# Regressions-Tests für den PB-Boundary-Bug (1000..1023 durften nie "PB" sein)
 check("fmt: 1000 B (Grenze)", fb(1000) == "1000 B", fb(1000))
 check("fmt: 1023 B (Grenze)", fb(1023) == "1023 B", fb(1023))
 check("fmt: 1024 = 1 KB", fb(1024) == "1 KB", fb(1024))
@@ -90,6 +98,8 @@ check("fmt: 1 GB", fb(1024**3) == "1 GB", fb(1024**3))
 check("fmt: None", fb(None) == "\u2026", repr(fb(None)))
 check("fmt: -5 -> 0 B", fb(-5) == "0 B", fb(-5))
 check("fmt: 1234567890", fb(1234567890) == "1,15 GB", fb(1234567890))
+check("fmt: 1 TB (Grenze)", fb(1024**4) == "1 TB", fb(1024**4))
+check("fmt: 1 PB (Obergrenze)", fb(1024**5) == "1 PB", fb(1024**5))
 check("count: 1234", tr.format_count(1234) == "1\u202f234", tr.format_count(1234))
 check("count: None", tr.format_count(None) == "\u2026")
 
@@ -150,6 +160,61 @@ except (OSError, ValueError) as e:
 f3, d3, s3 = tr.delete_folder_contents(root)  # erster Lauf hat alles weg
 check("delete2: 2. Lauf findet nichts", f3 == 0 and d3 == 0 and s3 == 0,
       f"freed={f3} deleted={d3} skipped={s3}")
+
+# --- 15. Junction (mklink /J): Link-Eintrag weg, Ziel NUR NICHT beruehrt ---
+# Regressions-Test gegen den H1-Bug: os.path.islink() erkennt Junctions auf
+# Windows NICHT -> os.walk lief durch sie und delete loeschte die ZIEL-inhalte.
+# mklink /J funktioniert ohne Admin/Dev-Mode (im Gegensatz zu echten Symlinks).
+import subprocess
+j_tgt = os.path.join(BASE, "j_tgt"); os.makedirs(os.path.join(j_tgt, "inner"))
+wf(os.path.join(j_tgt, "inner", "x.txt"), 50)
+j_top = os.path.join(BASE, "j_top"); os.makedirs(j_top)
+_jr = subprocess.run(["cmd", "/c", "mklink", "/J",
+                      os.path.join(j_top, "jnk"), j_tgt],
+                     capture_output=True, text=True)
+_jnk = os.path.join(j_top, "jnk")
+if os.path.isdir(_jnk):
+    check("junction: _is_reparse_point erkennt Junction (islink tut das NICHT)",
+          tr._is_reparse_point(_jnk) is True and os.path.islink(_jnk) is False,
+          f"is_reparse={tr._is_reparse_point(_jnk)} islink={os.path.islink(_jnk)}")
+    t5, c5 = tr.scan_folder(j_top)
+    check("junction: scan laeuft NICHT durch Ziel (count=0, total=0)",
+          c5 == 0 and t5 == 0, f"total={t5} count={c5}")
+    f5, d5, s5 = tr.delete_folder_contents(j_top)
+    check("junction: Link-Eintrag entfernt", not os.path.lexists(_jnk))
+    check("junction: Ziel unangetastet (Datei existiert noch)",
+          os.path.exists(os.path.join(j_tgt, "inner", "x.txt")))
+    check("junction: deleted=1 (nur der Link-Eintrag)", d5 == 1, f"deleted={d5}")
+    check("junction: skipped=0", s5 == 0, f"skipped={s5}")
+else:
+    print(f"SKIP junction-Test (mklink /J fehlgeschlagen: "
+          f"{(_jr.stderr or _jr.stdout).strip()})")
+
+# --- 16. Gesperrte Datei (Handle OHNE DELETE-Share) -> skipped-Pfad ---
+# Windows: Loeschen fuehrt nur mit FILE_SHARE_DELETE; Handle mit nur
+# FILE_SHARE_READ blockiert os.remove -> PermissionError -> skipped += 1.
+import ctypes
+k32 = ctypes.windll.kernel32
+k32.CreateFileW.restype = ctypes.c_void_p
+lk_dir = os.path.join(BASE, "lk"); os.makedirs(lk_dir)
+lk_file = os.path.join(lk_dir, "locked.txt")
+wf(lk_file, 42)
+GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING = 0x80000000, 0x1, 3
+h = k32.CreateFileW(lk_file, GENERIC_READ, FILE_SHARE_READ, None,
+                    OPEN_EXISTING, 0, None)
+if h is not None and h != ctypes.c_void_p(-1):
+    f6, d6, s6 = tr.delete_folder_contents(lk_dir)
+    check("locked: gesperrte Datei uebersprungen (skipped=1)",
+          s6 == 1, f"skipped={s6} deleted={d6} freed={f6}")
+    check("locked: Datei existiert noch", os.path.exists(lk_file))
+    check("locked: freed=0 (nichts entfernt)", f6 == 0, f"freed={f6}")
+    k32.CloseHandle(h)
+    f7, d7, s7 = tr.delete_folder_contents(lk_dir)
+    check("locked: nach Handle-Close wird sie geloest",
+          not os.path.exists(lk_file), f"deleted={d7} skipped={s7}")
+else:
+    print("SKIP locked-Test (CreateFileW fehlgeschlagen, "
+          f"LastError={ctypes.GetLastError()})")
 
 print()
 fails = [r for r in results if not r[1]]

@@ -4,7 +4,7 @@ Dokumentiert die reale, gebaute Welt der App (`temp_reiniger.py`,
 CustomTkinter, Windows, Single-EXE). Mode: **Operate**.
 
 ## Direction: „The Scale"
-Drei Temp-Ordnere als drei **Instrument-Felder**. Nicht die graue
+Drei Temp-Ordner als drei **Instrument-Felder**. Nicht die graue
 WinForms-Liste mit roten Buttons, nicht das Neon-Dashboard. Die drei
 Ordner lesen sich wie drei Messfelder, die man leert.
 
@@ -84,10 +84,11 @@ sinken Zahl und Leiste (Tween vom alten zum neuen Wert) — das „Leerziehen".
   App lebt weiter als **Tray-Icon** (Teal-Platte mit weißem Papierkorb).
 - **Rechtsklick** im Tray: die 4 Lösch-Optionen (`%TEMP% leeren`,
   `%LOCALAPPDATA%\Temp leeren`, `%SystemRoot%\Temp leeren`,
-  `Alle Temp-Ordnere leeren`) + `Fenster öffnen` + `Temp-Reiniger beenden`.
+  `Alle Temp-Ordner leeren`) + `Fenster öffnen` + `Temp-Reiniger beenden`.
 - Tray-Aktionen laufen über einen thread-sicheren Queue-Poller sicher in den
   Tk-Haupt-Thread (pystray hat einen eigenen Tray-Thread).
-- `Fenster öffnen` (bzw. Linksklick) zeigt das Hauptfenster wieder an.
+- `Fenster öffnen` zeigt das Hauptfenster wieder an. (Linksklick aufs Icon
+  öffnet das Menü — pystray ohne Default-Item zeigt bei beiden Klicks das Menü.)
 
 ## Sicherheitsregeln (gebaut)
 - Beim Start wird **nie** gelöscht — nur eingelesen.

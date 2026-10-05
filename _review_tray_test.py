@@ -9,6 +9,13 @@ Stand 2026-10-05:
 - EnumWindows/EnumChildWindows bekommen jetzt die PYTHON-Callback (cb(enum_cb)),
   nicht cb(0) = ctypes-Callback an Adresse 0 (NULL-Funktionspunktier -> AV).
 - Dialogtitel-Match ist versionsunabhaengig (startswith "Temp-Reiniger").
+
+2. Review (2026-10-05):
+- SendInput: MOUSEEVENTF_ABSOLUTE + 0..65535-Normierung auf den VIRTUELLEN
+  Screen (ohne das Flag waeren dx/dy relative Verschiebungen vom Cursor).
+- Watchdog: askyesno blockiert den Main-Thread — fehlgeschlagener
+  SendInput-Klick waere ein Ewigs-Hang im Modal. Nach 45 s ohne Abschluss:
+  os._exit(3).
 """
 import os, sys, time, ctypes, ctypes.wintypes as wt, threading
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -20,7 +27,9 @@ tr = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tr)
 
 user32 = ctypes.windll.user32
-SW = user32.GetSystemMetrics(0); SH = user32.GetSystemMetrics(1)
+# VIRTUELLER Screen (Multi-Monitor, kann negative Offsets haben)
+VX0 = user32.GetSystemMetrics(76); VY0 = user32.GetSystemMetrics(77)
+VW  = user32.GetSystemMetrics(78); VH  = user32.GetSystemMetrics(79)
 WM = 0x0003; GWL_STYLE = -16; WS_DISABLED = 0x8000000
 
 class MOUSEINPUT(ctypes.Structure):
@@ -33,11 +42,24 @@ class INPUT_(ctypes.Structure):
         _fields_ = [("mi", MOUSEINPUT)]
     _fields_ = [("type", wt.DWORD), ("u", _U)]
 assert ctypes.sizeof(INPUT_) == 28, f"INPUT_-Layout kaputt: {ctypes.sizeof(INPUT_)} statt 28"
+MOUSEEVENTF_ABSOLUTE = 0x8000
+
+_done = {"flag": False}
+def _watchdog():
+    time.sleep(45)
+    if not _done["flag"]:
+        print("WATCHDOG: Test haengt (Dialog vermutlich noch offen) — Exit 3")
+        os._exit(3)
+threading.Thread(target=_watchdog, daemon=True).start()
 
 def click(x, y):
     def ev(flags):
-        i = INPUT_(type=0, u=INPUT_._U(mi=MOUSEINPUT(dx=int(x * (SW - 1) / SW), dy=int(y * (SH - 1) / SH),
-                                            mouseData=0, dwFlags=flags | 0x0001, time=0, dwExtraInfo=0)))
+        dx = max(0, min(65535, int((x - VX0) * 65535 / (VW - 1))))
+        dy = max(0, min(65535, int((y - VY0) * 65535 / (VH - 1))))
+        i = INPUT_(type=0, u=INPUT_._U(mi=MOUSEINPUT(dx=dx, dy=dy,
+                                            mouseData=0,
+                                            dwFlags=flags | 0x0001 | MOUSEEVENTF_ABSOLUTE,
+                                            time=0, dwExtraInfo=0)))
         sent = user32.SendInput(1, ctypes.byref(i), ctypes.sizeof(INPUT_))
         if sent != 1:
             print(f"  WARNUNG: SendInput fehlgeschlagen (ret={sent}, GetLastError={ctypes.GetLastError()})")
@@ -125,5 +147,6 @@ print("busy nachher:", app._busy, "| status:", app.status_msg.cget("text"))
 after = {c["idx"]: c["bytes"] for c in app.cards}
 print("Bytes nachher:", after)
 print("NICHTS GEOESCHT (bytes unveraendert):", before == after or all(v is None for v in before.values()))
+_done["flag"] = True   # Watchdog entlassen (sonst waere er der Ewigs-Hang-Schutz, der zu spaet loest)
 app._do_quit()
 print("QUIT OK")

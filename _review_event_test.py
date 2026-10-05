@@ -67,6 +67,5 @@ def finish():
     root.destroy()
     croot.destroy()
 root.after(3500, finish)
-root.after(5000, root.destroy)
 root.mainloop()
 print("DONE")

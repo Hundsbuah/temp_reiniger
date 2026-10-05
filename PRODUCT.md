@@ -5,7 +5,7 @@ einer einzigen EXE über PyInstaller.
 
 ## Surface & Mode
 - **Surface:** eine Fenster-App (Desktop, keine Web-Oberfläche).
-- **Mode:** Operate — der Nutzer vollzieht eine Aufgabe (Temp-Ordnerein
+- **Mode:** Operate — der Nutzer vollzieht eine Aufgabe (Temp-Ordner
   ansehen und leeren). Scanbarkeit, Konsistenz und native Erwartungen schlagen
   Ausdruck.
 

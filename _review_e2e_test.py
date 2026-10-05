@@ -10,6 +10,16 @@ Stand 2026-10-05:
   nicht belastbar (False Positive: der Start-Scan wuerde als Klick gezahlt).
 - Vor dem Klick wird das Fenster lifted/focused, damit der SendInput-Klick
   nicht auf ein anderes, ueber der App liegendes Fenster trifft.
+
+2. Review (2026-10-05):
+- SendInput bekommt MOUSEEVENTF_ABSOLUTE (0x8000): ohne das Flag sind
+  dx/dy RELATIVE Pixel-Verschiebungen vom aktuellen Cursor — der Klick
+  landete bei cursor+(x,y), nicht bei (x,y). Jetzt: absolute Koordinaten
+  auf den 0..65535-Bereich des VIRTUELLEN Screens (Multi-Monitor, negative
+  Offsets via SM_X/YVIRTUALSCREEN) normiert.
+- Klick-Erkennung ueber status_head ("Liest …") + _busy statt der
+  Status-ZEILE: der 1-s-Status-Ticker schreibt "vor X Sekunden" jede
+  Sekunde neu -> st != status_before wurde OHNE Klick wahr (False Positive).
 """
 import os, sys, time, ctypes, ctypes.wintypes as wt
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -21,10 +31,12 @@ tr = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tr)
 
 user32 = ctypes.windll.user32
-SM_CXSCREEN, SM_CYSCREEN = 0, 1
-SW = user32.GetSystemMetrics(SM_CXSCREEN)
-SH = user32.GetSystemMetrics(SM_CYSCREEN)
-print("Screen:", SW, SH)
+# VIRTUELLER Screen (Multi-Monitor; kann negative Offsets haben)
+VX0 = user32.GetSystemMetrics(76)   # SM_XVIRTUALSCREEN
+VY0 = user32.GetSystemMetrics(77)   # SM_YVIRTUALSCREEN
+VW  = user32.GetSystemMetrics(78)   # SM_CXVIRTUALSCREEN
+VH  = user32.GetSystemMetrics(79)   # SM_CYVIRTUALSCREEN
+print("Virtual Screen:", VX0, VY0, VW, VH)
 
 class POINT(ctypes.Structure):
     _fields_ = [("x", wt.LONG), ("y", wt.LONG)]
@@ -39,11 +51,21 @@ class INPUT_(ctypes.Structure):
     _fields_ = [("type", wt.DWORD), ("u", _U)]
 assert ctypes.sizeof(INPUT_) == 28, f"INPUT_-Layout kaputt: {ctypes.sizeof(INPUT_)} statt 28"
 MOUSEEVENTF_MOVE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP = 0x0001, 0x0002, 0x0004
+MOUSEEVENTF_ABSOLUTE = 0x8000
+
+def _abs(x, y):
+    # Absolute Screen-Koordinate -> 0..65535 (SendInput-Norm) auf den
+    # virtuellen Screen normiert und geclampt.
+    dx = int((x - VX0) * 65535 / (VW - 1))
+    dy = int((y - VY0) * 65535 / (VH - 1))
+    return max(0, min(65535, dx)), max(0, min(65535, dy))
 
 def real_click(x, y):
     def ev(flags):
-        i = INPUT_(type=0, u=INPUT_._U(mi=MOUSEINPUT(dx=int(x * (SW - 1) / SW), dy=int(y * (SH - 1) / SH),
-                                            mouseData=0, dwFlags=flags | MOUSEEVENTF_MOVE,
+        ax, ay = _abs(x, y)
+        i = INPUT_(type=0, u=INPUT_._U(mi=MOUSEINPUT(dx=ax, dy=ay,
+                                            mouseData=0,
+                                            dwFlags=flags | MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE,
                                             time=0, dwExtraInfo=0)))
         sent = user32.SendInput(1, ctypes.byref(i), ctypes.sizeof(INPUT_))
         if sent != 1:
@@ -76,17 +98,20 @@ sx = scan_btn.winfo_rootx() + scan_btn.winfo_width() // 2
 sy = scan_btn.winfo_rooty() + scan_btn.winfo_height() // 2
 print(f"Klicke auf 'Aktualisieren' bei ({sx},{sy})")
 
-status_before = app.status_msg.cget("text")
+# Klick-Erkennung: status_head + _busy. NICHT die Status-ZEILE: der 1-s
+# Ticker schreibt sie im ready-Modus jede Sekunde neu ("vor X Sekunden")
+# -> text-change waere OHNE Klick ein garantierter False-Positive.
+head_before = app.status_head.cget("text")
 real_click(sx, sy)
 
 t0 = time.time()
 clicked = False
 while time.time() - t0 < 8:
     app.update()
-    st = app.status_msg.cget("text")
-    if st != status_before or app._busy:
+    head = app.status_head.cget("text")
+    if head != head_before or app._busy:
         clicked = True
-        print("EINSCHLAG: Status =", st, "| busy =", app._busy)
+        print(f"EINSCHLAG: head='{head}' (vorher '{head_before}') | busy =", app._busy)
         break
     time.sleep(0.1)
 if not clicked:
