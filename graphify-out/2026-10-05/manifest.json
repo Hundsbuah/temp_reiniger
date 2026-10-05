@@ -1,0 +1,32 @@
+{
+  "temp_reiniger.py": {
+    "mtime": 1788092698.829027,
+    "seen": 1788092765.8248467,
+    "ast_hash": "f3b022f405b59d2111dc30276b7986d4",
+    "semantic_hash": ""
+  },
+  "PRODUCT.md": {
+    "mtime": 1788091688.8238661,
+    "seen": 1788091936.771376,
+    "ast_hash": "8742f04f79c98f95775280f150dfa76b",
+    "semantic_hash": "8742f04f79c98f95775280f150dfa76b"
+  },
+  ".impeccable/review/desktop.png": {
+    "mtime": 1788092235.8392265,
+    "seen": 1788092290.1668854,
+    "ast_hash": "cbfa220bf52f354705eaa346d306a52d",
+    "semantic_hash": ""
+  },
+  "DESIGN.md": {
+    "mtime": 1788092738.0831332,
+    "seen": 1788092765.82485,
+    "ast_hash": "25d6a44dfeb8a3c8e95daf2f71762ebc",
+    "semantic_hash": ""
+  },
+  ".impeccable/review/tray_icon.png": {
+    "mtime": 1788092727.7145073,
+    "seen": 1788092765.8248558,
+    "ast_hash": "9631d4c9ed8268b55235a9e0246d0e65",
+    "semantic_hash": ""
+  }
+}

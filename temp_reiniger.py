@@ -53,6 +53,7 @@ import os
 import stat
 import queue
 import time
+import ctypes
 import threading
 import traceback
 import tkinter as tk
@@ -62,7 +63,7 @@ import customtkinter as ctk
 # --------------------------------------------------------------------------- #
 #  Version
 # --------------------------------------------------------------------------- #
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 # --------------------------------------------------------------------------- #
 #  Design-Token
@@ -102,7 +103,7 @@ def format_bytes(n):
         return "…"
     if n < 0:
         n = 0
-    if n < 1000:
+    if n < 1024:
         return f"{int(n)} B"
     units = ["KB", "MB", "GB", "TB", "PB"]
     v = float(n)
@@ -147,10 +148,15 @@ def delete_folder_contents(top):
 
     Rückgabe: (freier Byte, gelöschte Dateien, übersprungene Einträge).
     Sperrungen (in Benutzung / keine Rechte) werden übersprungen.
+    Symlinks werden nie gefolgt: ein Symlink (auf Datei ODER Ordner) wird als
+    Eintrag entfernt, das Ziel bleibt unangetastet. Eine WURZEL, die selbst
+    ein Symlink ist, wird nicht angefasst (Ziel wäre unbekannt).
     """
     top = os.path.abspath(top)
     freed = deleted = skipped = 0
     if not os.path.isdir(top):
+        return 0, 0, 0
+    if os.path.islink(top):
         return 0, 0, 0
     for dirpath, _dirnames, filenames in os.walk(top, topdown=False):
         for name in filenames:
@@ -171,17 +177,31 @@ def delete_folder_contents(top):
             except (PermissionError, OSError):
                 skipped += 1
         if dirpath != top:
-            try:
-                os.rmdir(dirpath)          # nur, wenn leer; Wurzel bleibt
-            except PermissionError:
-                # Windows: read-only-Ordner -> Write-Bit setzen und erneut entfernen
+            if os.path.islink(dirpath):
+                # Symlink-auf-Ordner: NUR den Link entfernen (os.remove trifft
+                # den Link, nie das Ziel); read-only-Link -> chmod-Retry wie bei Dateien
                 try:
-                    os.chmod(dirpath, stat.S_IWRITE)
-                    os.rmdir(dirpath)
+                    os.remove(dirpath)
+                except PermissionError:
+                    try:
+                        os.chmod(dirpath, stat.S_IWRITE)
+                        os.remove(dirpath)
+                    except OSError:
+                        skipped += 1
+                except OSError:
+                    skipped += 1
+            else:
+                try:
+                    os.rmdir(dirpath)      # nur, wenn leer; Wurzel bleibt
+                except PermissionError:
+                    # Windows: read-only-Ordner -> Write-Bit setzen und erneut entfernen
+                    try:
+                        os.chmod(dirpath, stat.S_IWRITE)
+                        os.rmdir(dirpath)
+                    except OSError:
+                        pass
                 except OSError:
                     pass
-            except OSError:
-                pass
     return freed, deleted, skipped
 
 
@@ -238,6 +258,11 @@ class Tooltip:
         ).pack()
 
     def _hide(self, _e):
+        self.hide()
+
+    def hide(self):
+        """Tooltip zerstören (auch programmatisch, z. B. beim Ausblenden des
+        Hauptfensters — das overrideredirect-Toplevel würde sonst schweben)."""
         if self.tip:
             self.tip.destroy()
             self.tip = None
@@ -252,9 +277,9 @@ class TempApp(ctk.CTk):
         self._closing = False
         self._busy = False
         self._tween_tokens = {}
+        self._tween_last = {}      # Key -> zuletzt ANGEZEIGTER Tween-Wert
         self._all_armed = False
         self._all_armed_job = None
-        self._prev_total = 0
         self._last_scan_ts = None
         self._last_scan_str = None
         self._last_total = None
@@ -290,10 +315,20 @@ class TempApp(ctk.CTk):
 
     # ------------------------------------------------------------- layout
     def _center(self, win, w, h):
-        sw = win.winfo_screenwidth()
-        sh = win.winfo_screenheight()
-        x = max(0, (sw - w) // 2)
-        y = max(0, (sh - h) // 2 - 40)
+        """Zentrieren über den gesamten VIRTUELLEN Schreibtisch (Multi-Monitor),
+        nicht nur über den Primärmonitor. Fallback: Primärmonitor."""
+        x0, y0 = 0, 0
+        vw, vh = win.winfo_screenwidth(), win.winfo_screenheight()
+        try:
+            user32 = ctypes.windll.user32
+            vw = user32.GetSystemMetrics(78)   # SM_CXVIRTUALSCREEN
+            vh = user32.GetSystemMetrics(79)   # SM_CYVIRTUALSCREEN
+            x0 = user32.GetSystemMetrics(76)   # SM_XVIRTUALSCREEN
+            y0 = user32.GetSystemMetrics(77)   # SM_YVIRTUALSCREEN
+        except Exception:
+            pass
+        x = max(x0, x0 + (vw - w) // 2)
+        y = max(y0, y0 + (vh - h) // 2 - 40)
         win.geometry(f"{w}x{h}+{x}+{y}")
 
     def _build_ui(self):
@@ -337,7 +372,14 @@ class TempApp(ctk.CTk):
         self.status_head = ctk.CTkLabel(right, text="Bereit", font=self.f_body,
                                         text_color=INK_SOFT)
         self.status_head.pack(side="left")
-        ctk.CTkLabel(right, text=f"C:\\ · {len(temp_definitions())} Temp-Ordner",
+        defs = temp_definitions()
+        try:
+            drives = sorted({os.path.splitdrive(os.path.realpath(p))[0]
+                             for _, p in defs if p})
+        except Exception:
+            drives = []
+        drive_txt = (" · ".join(d + "\\" for d in drives) + " · ") if drives else ""
+        ctk.CTkLabel(right, text=f"{drive_txt}{len(defs)} Temp-Ordner",
                      font=self.f_small, text_color=INK_FAINT
                      ).pack(side="left", padx=(14, 0))
 
@@ -359,7 +401,7 @@ class TempApp(ctk.CTk):
         path_lbl = ctk.CTkLabel(card, text=shown, font=self.f_path,
                                 text_color=INK_FAINT, anchor="w")
         path_lbl.grid(row=1, column=0, sticky="ew", padx=20, pady=(2, 0))
-        Tooltip(path_lbl, full)
+        card_tooltip = Tooltip(path_lbl, full)
 
         # Große Zahl
         num = ctk.CTkLabel(card, text="…", font=self.f_num, text_color=INK,
@@ -386,6 +428,7 @@ class TempApp(ctk.CTk):
         self.cards.append({
             "idx": idx, "title": title, "path": path,
             "num": num, "bar": bar, "count": count, "button": btn,
+            "tooltip": card_tooltip,
             "armed": False, "armed_job": None, "bytes": None, "nfiles": None,
         })
 
@@ -523,6 +566,7 @@ class TempApp(ctk.CTk):
         token = self._tween_tokens.get(key, 0) + 1
         self._tween_tokens[key] = token
         steps = 18
+        interval = max(8, round(duration / (steps + 1)))   # duration wird nun honoriert
         def step(i):
             if self._closing:
                 return
@@ -530,10 +574,13 @@ class TempApp(ctk.CTk):
                 return
             t = min(1.0, i / steps)
             e = 1 - (1 - t) ** 3            # ease-out
-            apply(from_v + (to_v - from_v) * e)
+            v = from_v + (to_v - from_v) * e
+            self._tween_last[key] = v       # zuletzt angezeigter Wert merken
+            apply(v)
             if i < steps:
-                self.after(16, lambda: step(i + 1))
+                self.after(interval, lambda: step(i + 1))
             else:
+                self._tween_last[key] = to_v
                 apply(to_v)
                 if done:
                     done()
@@ -547,6 +594,7 @@ class TempApp(ctk.CTk):
         self.scan_button.configure(text="Aktualisiere …")
         self._set_status("Wird eingelesen …", INK_SOFT)
         self.status_dot.configure(text_color=WARN)
+        self.status_head.configure(text="Liest …")
         for c in self.cards:
             c["num"].configure(text="…")
             c["count"].configure(text="—")
@@ -590,19 +638,18 @@ class TempApp(ctk.CTk):
         )
         for i, c in enumerate(self.cards):
             frac = (c["bytes"] or 0) / max_b
-            prev_bar = c.get("prev_bar") or 0.0
-            prev_b = c.get("prev_bytes") or 0
+            # Ausgangs-Wert = zuletzt ANGEZEIGTER Wert (kein Sprung, wenn ein
+            # Tween unterbrochen wurde)
+            prev_bar = float(self._tween_last.get(f"bar{i}", 0.0))
+            prev_b = float(self._tween_last.get(f"num{i}", 0))
             self._tween(f"bar{i}", prev_bar, frac, c["bar"].set, 520 + i * 70)
-            self._tween(f"num{i}", float(prev_b), float(c["bytes"] or 0),
+            self._tween(f"num{i}", prev_b, float(c["bytes"] or 0),
                         lambda v, n=c["num"]: n.configure(text=format_bytes(int(v))),
                         520 + i * 70)
             c["count"].configure(text=f"{format_count(c['nfiles'])} Dateien")
-            c["prev_bar"] = frac
-            c["prev_bytes"] = c["bytes"]
-        self._tween("total", float(self._prev_total), float(total),
+        self._tween("total", float(self._tween_last.get("total", 0)), float(total),
                     lambda v: self.total_num.configure(text=format_bytes(int(v))),
                     560)
-        self._prev_total = total
         # fertig
         self._set_busy(False)
         self.scan_button.configure(text="Aktualisieren")
@@ -611,6 +658,7 @@ class TempApp(ctk.CTk):
         self._last_scan_str = time.strftime("%H:%M")
         self._last_total = total
         self._status_mode = "ready"
+        self.status_head.configure(text="Bereit")
         self._set_status(
             f"Bereit · eingelesen {self._last_scan_str} · vor 0 Sekunden · "
             f"{format_bytes(total)} gesamt", INK_SOFT
@@ -648,39 +696,67 @@ class TempApp(ctk.CTk):
             self._all_armed_job = self.after(3200, revert)
 
     def _do_delete(self, target):
+        # Einzig zentraler Busy-Guard: schützt ALLE Einstiege (Button, Tray-Karte,
+        # Tray-Dialog) vor parallelen Workern (Delete neben Delete/Scan)
+        if self._busy:
+            return
         self._cancel_rescan()
         self._set_busy(True)
         scope = "alle Temp-Ordner" if target.get("all") else "einen Ordner"
         self._set_status(f"Leere {scope} …", INK_SOFT)
         self.status_dot.configure(text_color=WARN)
+        self.status_head.configure(text="Leere …")
         threading.Thread(target=self._delete_worker, args=(target,),
                          daemon=True).start()
 
     def _delete_worker(self, target):
-        if target.get("all"):
-            # jeden physischen Ordner nur einmal (Dedup)
-            seen, jobs = set(), []
-            for c in self.cards:
+        try:
+            if target.get("all"):
+                # jeden physischen Ordner nur einmal (Dedup)
+                seen, jobs = set(), []
+                for c in self.cards:
+                    p = os.path.realpath(c["path"]) if c["path"] else None
+                    if p and p not in seen:
+                        seen.add(p)
+                        jobs.append(p)
+            else:
+                c = self.cards[target["idx"]]
                 p = os.path.realpath(c["path"]) if c["path"] else None
-                if p and p not in seen:
-                    seen.add(p)
-                    jobs.append(p)
-        else:
-            c = self.cards[target["idx"]]
-            p = os.path.realpath(c["path"]) if c["path"] else None
-            jobs = [p] if p else []
-        freed = deleted = skipped = 0
-        for p in jobs:
-            f, d, s = delete_folder_contents(p)
-            freed += f
-            deleted += d
-            skipped += s
+                jobs = [p] if p else []
+            freed = deleted = skipped = 0
+            for p in jobs:
+                f, d, s = delete_folder_contents(p)
+                freed += f
+                deleted += d
+                skipped += s
+        except Exception:
+            # Sicherheitsnetz (wie beim Scan-Worker): ohne Callback würde die UI
+            # für immer "busy" bleiben, und in der console-less EXE wäre der
+            # Traceback unsichtbar.
+            traceback.print_exc()
+            self._ui_queue.put(lambda: self._on_delete_error())
+            return
         # thread-sicher: Ergebnis in Queue legen, Main-Thread führt _on_deleted aus
         self._ui_queue.put(lambda: self._on_deleted(freed, deleted, skipped))
+
+    def _on_delete_error(self):
+        """Unerwarteter Fehler im Delete-Worker: UI wieder freigeben (Main-Thread)."""
+        if self._closing:
+            return
+        self._set_busy(False)
+        self.status_head.configure(text="Fehler")
+        self.status_dot.configure(text_color=WARN)
+        self._status_mode = "result"   # Ticker lässt die Meldung stehen
+        self._set_status("Fehler beim Löschen — Details in der Konsole.", WARN)
 
     def _on_deleted(self, freed, deleted, skipped):
         if self._closing:
             return
+        # Worker ist fertig -> UI WIEDER FREIGEBEN (auch während des 3-s
+        # Result-Fensters bis zum Auto-Rescan; sonst: grüner OK-Punkt bei
+        # deaktivierten Buttons)
+        self._set_busy(False)
+        self.status_head.configure(text="Fertig")
         self.total_button.configure(text="Alle löschen", fg_color=ACCENT,
                                     hover_color=ACCENT_D)
         msg = (f"{format_bytes(freed)} entfernt · {format_count(deleted)} "
@@ -727,7 +803,7 @@ class TempApp(ctk.CTk):
                              lambda i, it: self._tray_action("card", 1)),
             pystray.MenuItem(f"{defs[2][0]} leeren",
                              lambda i, it: self._tray_action("card", 2)),
-            pystray.MenuItem("Alle Temp-Ordnere leeren",
+            pystray.MenuItem("Alle Temp-Ordner leeren",
                              lambda i, it: self._tray_action("all", None)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Fenster öffnen",
@@ -752,8 +828,8 @@ class TempApp(ctk.CTk):
         if self._closing or self._busy:
             return
         if tk_messagebox.askyesno(
-            "Alle Temp-Ordnere leeren",
-            "Wirklich ALLE drei Temp-Ordnere leeren?\n"
+            "Alle Temp-Ordner leeren",
+            "Wirklich ALLE drei Temp-Ordner leeren?\n"
             "Gesperrte Dateien werden übersprungen.",
         ):
             self._do_delete({"all": True})
@@ -790,13 +866,25 @@ class TempApp(ctk.CTk):
         try:
             while True:
                 fn = self._ui_queue.get_nowait()
-                fn()
+                try:
+                    fn()
+                except Exception:
+                    # EIN fehlerhaftes Kommando darf den Poller nicht töten:
+                    # sonst wären Tray-Aktionen + UI-Updates für immer tot
+                    # (App nicht mehr beendigbar). Fehler loggen, weiterpollen.
+                    traceback.print_exc()
         except queue.Empty:
             pass
         self.after(120, self._poll_ui)
 
     def _on_unmap(self, event):
         """Minimieren -> in den Tray verschwinden (Fenster ausblenden)."""
+        # Tooltip (eigenes overrideredirect-Toplevel) nicht im Desktop
+        # schweben lassen, wenn das Hauptfenster ausgeblendet wird
+        for c in self.cards:
+            tip = c.get("tooltip")
+            if tip is not None:
+                tip.hide()
         if self._closing or not getattr(self, "_tray_active", False):
             return
         try:
@@ -898,8 +986,7 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception:
-        traceback.print_exc()
-        raise
+    # Unbehandelte Exceptions propagieren: im PyInstaller-EXE-Modus
+    # (console=False, disable_windowed_traceback=False) zeigt der Bootloader
+    # dann ein native Fehlerdialog statt still zu sterben.
+    main()

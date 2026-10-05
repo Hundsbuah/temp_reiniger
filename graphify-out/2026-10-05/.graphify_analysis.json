@@ -1,0 +1,141 @@
+{
+  "communities": {
+    "0": [
+      "temp_reiniger",
+      "temp_reiniger_de",
+      "temp_reiniger_delete_folder_contents",
+      "temp_reiniger_dev_screenshot",
+      "temp_reiniger_main",
+      "temp_reiniger_rationale_116",
+      "temp_reiniger_rationale_136",
+      "temp_reiniger_rationale_578",
+      "temp_reiniger_rationale_80",
+      "temp_reiniger_scan_folder",
+      "temp_reiniger_tempapp_delete_worker",
+      "temp_reiniger_tempapp_scan_worker"
+    ],
+    "1": [
+      "temp_reiniger_rationale_398",
+      "temp_reiniger_tempapp",
+      "temp_reiniger_tempapp_arm",
+      "temp_reiniger_tempapp_build_card",
+      "temp_reiniger_tempapp_build_total",
+      "temp_reiniger_tempapp_disarm",
+      "temp_reiniger_tempapp_do_delete",
+      "temp_reiniger_tempapp_ellipsize",
+      "temp_reiniger_tempapp_on_all_delete",
+      "temp_reiniger_tempapp_on_card_delete",
+      "temp_reiniger_tempapp_on_close",
+      "temp_reiniger_tempapp_set_busy"
+    ],
+    "2": [
+      "temp_reiniger_format_bytes",
+      "temp_reiniger_format_count",
+      "temp_reiniger_rationale_90",
+      "temp_reiniger_tempapp_on_deleted",
+      "temp_reiniger_tempapp_on_scanned",
+      "temp_reiniger_tempapp_scan_all",
+      "temp_reiniger_tempapp_set_status",
+      "temp_reiniger_tempapp_tween"
+    ],
+    "3": [
+      "impeccable_review_desktop_image",
+      "product",
+      "product_chosen_direction",
+      "product_constraints",
+      "product_temp_folders",
+      "product_temp_reiniger"
+    ],
+    "4": [
+      "temp_reiniger_temp_definitions",
+      "temp_reiniger_tempapp_build_header",
+      "temp_reiniger_tempapp_build_status",
+      "temp_reiniger_tempapp_build_ui",
+      "temp_reiniger_tempapp_center",
+      "temp_reiniger_tempapp_init"
+    ],
+    "5": [
+      "temp_reiniger_tooltip",
+      "temp_reiniger_tooltip_hide",
+      "temp_reiniger_tooltip_init",
+      "temp_reiniger_tooltip_show"
+    ]
+  },
+  "cohesion": {
+    "0": 0.16666666666666666,
+    "1": 0.30303030303030304,
+    "2": 0.35714285714285715,
+    "3": 0.5333333333333333,
+    "4": 0.4,
+    "5": 0.5
+  },
+  "gods": [
+    {
+      "id": "temp_reiniger_tempapp",
+      "label": "TempApp",
+      "degree": 24
+    },
+    {
+      "id": "temp_reiniger_format_bytes",
+      "label": "format_bytes()",
+      "degree": 5
+    },
+    {
+      "id": "temp_reiniger_tooltip",
+      "label": "Tooltip",
+      "degree": 5
+    },
+    {
+      "id": "product",
+      "label": "PRODUCT \u2014 Temp-Reiniger",
+      "degree": 5
+    },
+    {
+      "id": "product_temp_reiniger",
+      "label": "Temp-Reiniger",
+      "degree": 4
+    },
+    {
+      "id": "temp_reiniger_de",
+      "label": "_de()",
+      "degree": 3
+    },
+    {
+      "id": "temp_reiniger_format_count",
+      "label": "format_count()",
+      "degree": 3
+    },
+    {
+      "id": "temp_reiniger_scan_folder",
+      "label": "scan_folder()",
+      "degree": 3
+    },
+    {
+      "id": "temp_reiniger_delete_folder_contents",
+      "label": "delete_folder_contents()",
+      "degree": 3
+    },
+    {
+      "id": "temp_reiniger_temp_definitions",
+      "label": "temp_definitions()",
+      "degree": 3
+    }
+  ],
+  "surprises": [
+    {
+      "source": "Desktop Screenshot",
+      "target": "PRODUCT \u2014 Temp-Reiniger",
+      "source_files": [
+        ".impeccable/review/desktop.png",
+        "PRODUCT.md"
+      ],
+      "confidence": "INFERRED",
+      "relation": "references",
+      "why": "inferred connection - not explicitly stated in source; crosses file types (doc \u2194 image); connects across different repos/directories; peripheral node `Desktop Screenshot` unexpectedly reaches hub `PRODUCT \u2014 Temp-Reiniger`"
+    }
+  ],
+  "tokens": {
+    "input": 1596,
+    "output": 3904
+  }
+}
