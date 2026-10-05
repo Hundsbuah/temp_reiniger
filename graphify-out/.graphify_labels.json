@@ -1,11 +1,1 @@
-{
-  "0": "temp_reiniger.py",
-  "1": "_review_tray_test.py",
-  "2": "format_bytes",
-  "3": "PRODUCT — Temp-Reiniger",
-  "4": "._build_menu",
-  "5": "🧹 Temp-Reiniger",
-  "6": "DESIGN — Temp-Reiniger (gebaut)",
-  "7": "TempApp",
-  "8": "Tooltip"
-}
+{"0": "Tk-Event-Handler & Module", "1": "Win32-CTypes-Strukturen & E2E-Test", "2": "Design-System & Design-Doku", "3": "Loesch-Logik & Worker", "4": "Screenshot: Karten & Status", "5": "TempApp-Kern & Armierung", "6": "Screenshot: Aktionen & Layout", "7": "App-Start, Poller & Tray-Thread", "8": "Tooltip-Komponente", "9": "Tray-Menue & Aktionen", "10": "UI-Aufbau & Temp-Definitionen", "11": "Produkt-Dokumentation", "12": "Delete-Flow & Bestaetigung", "13": "Tray-Icon-Semantik", "14": "Tray-Icon-Datei"}
