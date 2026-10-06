@@ -1,5 +1,6 @@
 # Zeilenumbrüche normalisieren beim Commit, damit Editor-CRLF-Saves
 # keine Ghost-Diffs (volle Datei-Rewrites ohne Inhalt) erzeugen.
-# core.autocrlf=false ist global gesetzt; text=auto macht die
-# Normalisierung repo-seitig davon unabhängig.
-* text=auto
+# eol=lf haelt den Worktree zusatzlich konsequent LF, auch auf Windows:
+# text=auto allein wuerde dort auch die CRLF-Konvertierung beim
+# Checkout aktivieren und dem globalen core.autocrlf=false widersprechen.
+* text=auto eol=lf
