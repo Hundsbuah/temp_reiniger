@@ -1,0 +1,5 @@
+# Zeilenumbrüche normalisieren beim Commit, damit Editor-CRLF-Saves
+# keine Ghost-Diffs (volle Datei-Rewrites ohne Inhalt) erzeugen.
+# core.autocrlf=false ist global gesetzt; text=auto macht die
+# Normalisierung repo-seitig davon unabhängig.
+* text=auto
