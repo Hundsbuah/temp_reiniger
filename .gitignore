@@ -18,3 +18,6 @@ Thumbs.db
 # Graphify: datierte Backups + Label-Pending (regenerierbar)
 graphify-out/20*-*/
 graphify-out/.graphify_labels.pending.json
+
+# Review-/Dev-Tests: lokal, nicht fürs Repo
+_review_*.py
