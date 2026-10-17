@@ -28,7 +28,12 @@ einer einzigen EXE über PyInstaller.
 
 ## Constraints
 - Wurzelmappen selbst dürfen **nie** gelöscht werden — nur deren Inhalt.
-- Keine automatischen Löschungen; nur durch expliziten Button-Klick.
+- Keine automatischen Löschungen; nur durch explizite Auswahl
+  (Button-Klick oder Tray-Menü).
+- JEDER Temp-Pfad wird validiert (absolut, kein Laufwerksroot/UNC, letzte
+  Komponente endet auf „temp") — unzulässige Karten werden weder gescannt
+  noch gelöscht.
+- Single-Instance: eine zweite Instanz wird abgelehnt (benannter Mutex).
 - Gesperrte/in-Benutzung befindliche Dateien werden übersprungen, nicht
   abgebrochen. `C:\Windows\Temp` kann ohne Admin-Rechte nur teilweise geleert
   werden (dann wird übersprungen).
@@ -43,6 +48,8 @@ einer einzigen EXE über PyInstaller.
 ## Annahmen (aus dem Brief abgeleitet, kein Antwort-Mechanismus vorhanden)
 - UI-Sprache Deutsch (Prompt ist deutsch).
 - Framework CustomTkinter (modern, single-EXE-freundlich, echtes Design).
-- Gesamt = Summe der drei sichtbaren Karten (visuell konsistent); Duplikat-
-  Hinweis wird angezeigt, wenn zwei Pfade identisch sind.
+- Gesamt = Summe der **eindeutigen** (physischen) Temp-Ordner; zeigt `%TEMP%`
+  auf denselben Ordner wie `%LOCALAPPDATA%\Temp`, zählt das Gesamt ihn nur
+  einmal (Duplikat-Hinweis wird angezeigt, die Karten zeigen jeweils ihre
+  eigene Größe).
 - Kein UAC-Elevate-Forcing; Admin bleibt eine Option des Nutzers.

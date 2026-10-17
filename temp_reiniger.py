@@ -42,18 +42,32 @@ FINISH
 SICHERHEIT
   - Es wird beim Start NIE automatisch gelöscht.
   - Löschen erfolgt nur durch explizite Auswahl: Button (zwei Schritte) oder
-    Tray-Rechtsklick (explizite Menüwahl).
+    Tray-Menü (Rechtsklick-Items; Linksklick = "Fenster öffnen", NICHT
+    destruktiv).
+  - JEDER Temp-Pfad wird vor Scan/Delete validiert (validate_temp_path):
+    absolut, kein Laufwerksroot/UNC, letzte Komponente endet auf "temp".
+    Verstoßende Karten werden unsicher markiert: kein Scan, kein Löschen.
+    (Env-Variablen wie %TEMP% sind von außen setzbar und werden NICHT blind
+    vertraut.)
   - Wurzelmappen selbst werden NIE gelöscht — nur deren Inhalt.
-  - Symlinks/Junctions werden NIE gefolgt — der Link-Eintrag wird entfernt,
-    das Ziel bleibt unangetastet (Reparse-Point-Prüfung, nicht nur islink:
-    os.path.islink() erkennt auf Windows Junctions NICHT).
+  - Reparse-Points (Symlinks/Junctions) IM BAUM werden nie gefolgt: der
+    Link-Eintrag wird entfernt, das Ziel bleibt unangetastet (Reparse-
+    Point-Prüfung, nicht nur islink: os.path.islink() erkennt auf Windows
+    Junctions NICHT). EINSCHRÄNKUNG: Der KARTEN-Pfad wird vorher per
+    os.path.realpath() aufgelöst — zeigt %TEMP% selbst auf einen Junction,
+    wird das ZIEL geleert (die Karten-Root-Prüfung in
+    delete_folder_contents greift dann nicht mehr).
   - Gesperrte Dateien werden übersprungen (kein Abbruch).
   - Minimieren/schließen -> Fenster in den System-Tray; dort per Rechtsklick
-    die 4 Lösch-Optionen + "Fenster öffnen" + "Beenden".
+    die 4 Lösch-Optionen + "Fenster öffnen" + "Beenden". Ist das Tray-Icon
+    nachweislich nicht verfügbar (1-s-Health-Check), wird degradiert:
+    Schließen beendet dann die App (mit Status-Hinweis).
+  - Single-Instance: eine zweite Instanz wird per benanntem Mutex abgelehnt.
 """
 
 import os
 import stat
+import sys
 import queue
 import time
 import ctypes
@@ -66,7 +80,7 @@ import customtkinter as ctk
 # --------------------------------------------------------------------------- #
 #  Version
 # --------------------------------------------------------------------------- #
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 # --------------------------------------------------------------------------- #
 #  Design-Token
@@ -101,17 +115,26 @@ def _de(value, decimals=2):
 
 
 def format_bytes(n):
-    """Byte-Größe als lesbare Zeichenfolge (deutsche Konvention)."""
+    """Byte-Größe als lesbare Zeichenfolge (deutsche Konvention).
+
+    FLOOR-Regel: die Einheit wird so gewählt, dass der ANGEZEIGTE Wert (auf
+    2 Dezimalen) immer < 1024 bleibt — z. B. 1048575 B -> "1 MB" statt
+    "1 024 KB". Einheiten sind nicht bei PB gedeckelt (EB/ZB/YB darüber).
+    """
     if n is None:
         return "…"
     if n < 0:
         n = 0
     if n < 1024:
         return f"{int(n)} B"
-    units = ["KB", "MB", "GB", "TB", "PB"]
+    units = ["KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"]
     v = float(n)
     i = -1
     while v >= 1024 and i < len(units) - 1:
+        v /= 1024.0
+        i += 1
+    # Rundung darf keine 1024 im aktuellen Einheitenfeld erzeugen
+    if i < len(units) - 1 and round(v, 2) >= 1024:
         v /= 1024.0
         i += 1
     return f"{_de(v, 2)} {units[i]}"
@@ -148,48 +171,136 @@ def _is_reparse_point(path):
         return False
 
 
-def scan_folder(path):
-    """(gesamte Größe in Byte, Dateianzahl) eines Ordners zählen.
+def _win_raw(p):
+    """`\\?\\`-präfixierten absoluten Pfad (Windows-Long-Path-Form).
 
-    Fehler (z. B. fehlende Rechte beim Einlesen) werden still ignoriert.
+    Ohne das Präfix streckt der Kernel hostile Namen (NUL, trailing
+    Dot/Space) oder routet sie auf Geräte — mit Präfix zeigen lstat/remove
+    auf den echten Eintrag. Niemals doppelt prefixen.
+    WICHTIG: Absolute Pfade NICHT normalisieren — os.path.abspath() streicht
+    auf CPython 3.14 das trailing Dot weg ("F:\\x\\dot." -> "F:\\x\\dot")
+    und würde den hostile Eintrag damit wieder unsichtbar machen.
+    """
+    if p.startswith("\\\\?\\"):
+        return p
+    if os.path.isabs(p):
+        return "\\\\?\\" + p
+    return "\\\\?\\" + os.path.abspath(p)
+
+
+def _under_blocked(dp, blocked_dirs):
+    """True, wenn `dp` selbst oder EINE TIEFERE Ebene eine bereits gezählte
+    übersprungene Datei enthält (dann ist ein rmdir-Fehlschlag in `dp` nur
+    Kaskade "nicht leer" und zählt NICHT zusätzlich als übersprungen)."""
+    prefix = dp + os.sep
+    return any(b == dp or b.startswith(prefix) for b in blocked_dirs)
+
+
+def scan_folder(path):
+    """(Größe in Byte, Dateianzahl, nicht lesbare Ordner) eines Ordners zählen.
+
+    `blocked` zählt Ordner, die nicht eingelesen werden konnten (z. B.
+    fehlende Rechte) — deren INHALT wird weder gezählt noch gelöscht; der
+    Aufrufer meldet das sichtbar (Status amber). Fehlender Pfad -> (0, 0, 0).
     Reparse-Points (Symlinks/Junctions) werden NICHT gefolgt: ihr Ziel zählt
     nicht mit (prunen via dirnames, damit os.walk nicht hineinläuft).
+    Hostile Namen (NUL, trailing Dot/Space) werden per `\\?\\`-Retry gezählt.
+    Auch ein am scandir gescheiterter ORDNER (hostile Ordner-Namen) wird per
+    `\\?\\`-Recovery nachgezählt — kein Phantom-„nicht lesbar".
     """
-    total, count = 0, 0
+    total, count, blocked = 0, 0, 0
     if not path or not os.path.isdir(path):
-        return 0, 0
-    for dirpath, dirnames, filenames in os.walk(path, onerror=lambda e: None):
+        return 0, 0, 0
+    unreadable = []   # gescheiterte Ordner (hostile Namen -> per `\\?\` lesbar)
+
+    def _onerror(e):
+        nonlocal blocked
+        blocked += 1
+        fn = getattr(e, "filename", None)
+        if isinstance(fn, str) and fn:
+            unreadable.append(fn)
+
+    for dirpath, dirnames, filenames in os.walk(path, onerror=_onerror):
         dirnames[:] = [d for d in dirnames
                        if not _is_reparse_point(os.path.join(dirpath, d))]
         for name in filenames:
             fp = os.path.join(dirpath, name)
+            st = None
             try:
                 st = os.lstat(fp)
+            except OSError:
+                # ohne `\\?\`-Prefix scheitert lstat an hostile Namen
+                try:
+                    st = os.lstat(_win_raw(fp))
+                except OSError:
+                    pass
+            if st is not None:
                 total += st.st_size
                 count += 1
-            except OSError:
-                pass
-    return total, count
+    # `\\?\`-Recovery (L2-Fix 2026-10-17): ein am normalen scandir
+    # gescheiterter Ordner ist unter dem Long-Path-Präfix oft sehr wohl
+    # enumerable (hostile Namen) — sein Inhalt zählt dann doch mit.
+    # handled/pending: ein verschachtelter gescheiterter Ordner wird genau
+    # EINMAL behandelt (der Parent-Raw-Walk hat ihn schon gezählt).
+    handled, pending = set(), {_win_raw(d) for d in unreadable}
+
+    def _recover_scan(dp):
+        nonlocal total, count, blocked
+        raw = _win_raw(dp)
+
+        def _err(e):
+            nonlocal blocked
+            if getattr(e, "filename", None) == raw:
+                return               # Top: vom Haupt-Walk bereits gezählt
+            blocked += 1             # nicht lesbarer Unterordner IM RAW-Subtree
+
+        for dirpath, dirnames, filenames in os.walk(raw, topdown=True,
+                                                    onerror=_err):
+            handled.add(dirpath)
+            if dirpath in pending:
+                pending.discard(dirpath)
+                blocked -= 1         # unter `\\?\` lesbar -> nicht mehr blockiert
+            dirnames[:] = [d for d in dirnames
+                           if not _is_reparse_point(os.path.join(dirpath, d))]
+            for name in filenames:
+                try:
+                    st = os.lstat(os.path.join(dirpath, name))
+                except OSError:
+                    continue
+                total += st.st_size
+                count += 1
+
+    for dp in unreadable:
+        raw = _win_raw(dp)
+        if raw in handled or not os.path.lexists(raw):
+            continue
+        _recover_scan(dp)
+    return total, count, blocked
 
 
 def delete_folder_contents(top):
     """Nur den INHALT von `top` löschen. `top` selbst bleibt bestehen.
 
-    Rückgabe: (freier Byte, gelöschte Dateien, übersprungene Einträge).
-    Sperrungen (in Benutzung / keine Rechte) werden übersprungen und
-    (als gesperrte Einträge) in `skipped` gezählt.
+    Rückgabe: (freier Byte, gelöschte Einträge, übersprungene Einträge,
+    nicht lesbare Ordner).
+    Sperrungen (in Benutzung / keine Rechte) werden übersprungen; ein
+    BLOCKIERTER SUBTREE zählt genau EINMAL (die tiefste gezählte Ebene —
+    i. d. R. die gesperrte Datei selbst), nicht zusätzlich jede nicht-leere
+    Elternebene. `blocked` zählt Ordner ohne Leserecht (Inhalt unverfügbar).
     Reparse-Points (Symlinks ODER Junctions) werden nie gefolgt: der
     Link-Eintrag wird als Eintrag entfernt, das Ziel bleibt unangetastet.
     os.path.islink() erkennt Junctions auf Windows NICHT — deshalb
     _is_reparse_point(). Eine WURZEL, die selbst ein Link/Junction ist,
     wird nicht angefasst (Ziel wäre unbekannt).
+    Ein am scandir gescheiterter Unterordner (hostile Ordner-Namen) wird per
+    `\\?\\`-Recovery mitsamt Inhalt entfernt (L2-Fix 2026-10-17).
     """
     top = os.path.abspath(top)
-    freed = deleted = skipped = 0
+    freed = deleted = skipped = blocked = 0
     if not os.path.isdir(top):
-        return 0, 0, 0
+        return 0, 0, 0, 0
     if _is_reparse_point(top):
-        return 0, 0, 0
+        return 0, 0, 0, 0
     # WICHTIG: topdown=True + in-place-Pruning der dirnames. os.walk läuft
     # auf Windows durch Junctions (is_symlink()==False) — nur ein PRUNE
     # verhindert, dass es in das Ziel hineingeht. (topdown=False wäre zu
@@ -197,16 +308,30 @@ def delete_folder_contents(top):
     # Echte Ordner werden erst im 2. Durchgang bottom-up rmdir'ed
     # (topdown=True: beim Besuch wären die Kinder noch da).
     to_rmdir = []
+    blocked_dirs = set()   # Ebenen mit mindestens einer übersprungenen DATEI
+    unreadable = []        # gescheiterte Ordner (per `\\?\` rekonstruierbar)
+
+    def _onerror(e):
+        nonlocal blocked
+        blocked += 1
+        fn = getattr(e, "filename", None)
+        if isinstance(fn, str) and fn:
+            unreadable.append(fn)
+
     for dirpath, dirnames, filenames in os.walk(top, topdown=True,
-                                                onerror=lambda e: None):
+                                                onerror=_onerror):
         keep = []
         for d in dirnames:
             dp = os.path.join(dirpath, d)
             if _is_reparse_point(dp):
                 # Link-EINTRAG entfernen; os.rmdir trifft nur den Link,
-                # nie das Ziel (empirisch verifiziert)
+                # nie das Ziel (empirisch verifiziert). `\\?\\`-Retry für
+                # hostile Link-Namen.
                 try:
-                    os.rmdir(dp)
+                    try:
+                        os.rmdir(dp)
+                    except OSError:
+                        os.rmdir(_win_raw(dp))
                     deleted += 1
                 except OSError:
                     skipped += 1
@@ -215,8 +340,21 @@ def delete_folder_contents(top):
         dirnames[:] = keep
         for name in filenames:
             fp = os.path.join(dirpath, name)
+            st = None
             try:
                 st = os.lstat(fp)
+            except OSError:
+                # hostile Namen (NUL, trailing Dot/Space): ohne `\\?\\`
+                # streckt der Kernel den Namen — Retry mit Long-Path-Form
+                try:
+                    st = os.lstat(_win_raw(fp))
+                except OSError:
+                    pass
+            if st is None:
+                skipped += 1
+                blocked_dirs.add(dirpath)
+                continue
+            try:
                 try:
                     os.remove(fp)
                 except PermissionError:
@@ -229,11 +367,104 @@ def delete_folder_contents(top):
                 freed += st.st_size
                 deleted += 1
             except (PermissionError, OSError):
-                skipped += 1
+                # letzte Rettung für hostile Namen: `\\?\\`-Pfad löschen
+                try:
+                    os.remove(_win_raw(fp))
+                    freed += st.st_size
+                    deleted += 1
+                except OSError:
+                    skipped += 1
+                    blocked_dirs.add(dirpath)
         if dirpath != top:
             to_rmdir.append(dirpath)
+
+    # `\\?\`-Recovery VOR dem rmdir-Pfad (L2-Fix 2026-10-17): ein am normalen
+    # scandir gescheiterter Ordner (hostile Namen: trailing Dot/Space) ist
+    # unter dem Long-Path-Präfix voll zugänglich — Inhalt löschen und den
+    # Ordner selbst entfernen (dann ist sein Parent wieder leer).
+    # handled/pending: ein verschachtelter gescheiterter Ordner wird genau
+    # EINMAL behandelt (der Parent-Raw-Walk hat ihn schon enumerated) und
+    # zählt dann nicht mehr als „blockiert".
+    handled, pending = set(), {_win_raw(d) for d in unreadable}
+
+    def _recover_hostile(dp):
+        nonlocal freed, deleted, skipped, blocked
+        raw = _win_raw(dp)
+
+        def _err(e):
+            nonlocal blocked
+            if getattr(e, "filename", None) == raw:
+                return                  # Top: vom Haupt-Walk bereits gezählt
+            blocked += 1                # nicht lesbarer Unterordner IM RAW-Subtree
+
+        sub = []
+        for dirpath, dirnames, filenames in os.walk(raw, topdown=True,
+                                                    onerror=_err):
+            handled.add(dirpath)
+            if dirpath in pending:
+                pending.discard(dirpath)
+                blocked -= 1            # unter `\\?\` lesbar -> Zählung zurück
+            keep = []
+            for d in dirnames:
+                dpp = os.path.join(dirpath, d)
+                if _is_reparse_point(dpp):
+                    try:
+                        os.rmdir(dpp)   # dpp ist bereits `\\?\`-Form
+                        deleted += 1
+                    except OSError:
+                        skipped += 1
+                else:
+                    keep.append(d)
+            dirnames[:] = keep
+            for name in filenames:
+                fp = os.path.join(dirpath, name)
+                try:
+                    st = os.lstat(fp)
+                except OSError:
+                    skipped += 1
+                    continue
+                try:
+                    try:
+                        os.remove(fp)
+                    except PermissionError:
+                        os.chmod(fp, stat.S_IWRITE)
+                        os.remove(fp)
+                    freed += st.st_size
+                    deleted += 1
+                except OSError:
+                    skipped += 1
+            if dirpath != raw:
+                sub.append(dirpath)
+        # bottom-up, danach der gescheiterte Ordner selbst (er ist Inhalt
+        # SEINES PARENTS). Bleibt er übrig, zählt er als übersprungen (er ist
+        # lesbar — die blocked-Zählung wurde oben zurückgenommen).
+        for dirpath in sorted(sub, key=len, reverse=True):
+            try:
+                os.rmdir(dirpath)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                skipped += 1
+        try:
+            os.rmdir(raw)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            skipped += 1
+
+    for dp in unreadable:
+        raw = _win_raw(dp)
+        if raw in handled or not os.path.lexists(raw):
+            continue
+        _recover_hostile(dp)
+
     # 2. Durchgang: bottom-up (tiefere Pfade sind länger) — jetzt sind alle
     # Inhalte weg, die Ordner sind leer. Wurzel bleibt immer stehen.
+    # Ein rmdir-Fehlschlag zählt NUR, wenn die Blockade HIER beginnt: liegt
+    # tiefer eine bereits gezählte übersprungene Datei ODER eine bereits
+    # gezählte nicht entfernbare Ordner-Ebene, ist das hier nur Kaskade
+    # ("nicht leer") und zählt NICHT zusätzlich (N2-Fix + L3-Fix 2026-10-17:
+    # reine Ordner-Kaskaden zählten vorher pro Ebene).
     for dirpath in sorted(to_rmdir, key=len, reverse=True):
         try:
             os.rmdir(dirpath)
@@ -245,10 +476,14 @@ def delete_folder_contents(top):
                 os.chmod(dirpath, stat.S_IWRITE)
                 os.rmdir(dirpath)
             except OSError:
-                skipped += 1            # gesperrt -> zählt mit (bleibt stehen)
+                if not _under_blocked(dirpath, blocked_dirs):
+                    skipped += 1        # hier blockiert -> zählt mit
+                blocked_dirs.add(dirpath)   # Ahnen-Ebenen = Kaskade, zählt nicht
         except OSError:
-            skipped += 1                # nicht leer (gesperrte Kinder) -> zählt mit
-    return freed, deleted, skipped
+            if not _under_blocked(dirpath, blocked_dirs):
+                skipped += 1            # hier blockiert -> zählt mit
+            blocked_dirs.add(dirpath)   # Ahnen-Ebenen = Kaskade, zählt nicht
+    return freed, deleted, skipped, blocked
 
 
 # --------------------------------------------------------------------------- #
@@ -261,6 +496,57 @@ def temp_definitions():
         ("%SystemRoot%\\Temp",   os.path.expandvars("%SystemRoot%\\Temp")),
     ]
     return defs
+
+
+# --------------------------------------------------------------------------- #
+#  Pfad-Validierung + Fehler-Log
+# --------------------------------------------------------------------------- #
+def validate_temp_path(raw):
+    """(ok, Grund) für einen expandierten Temp-Pfad, VOR Scan/Delete.
+
+    Env-Variablen sind von außen setzbar (z. B. %TEMP%=C:\\Windows oder
+    %TEMP%=.) — die App darf nicht blind darauf vertrauen. Zulässig:
+    absoluter lokaler Pfad (kein UNC), kein Laufwerksroot, dessen letzte
+    Komponente auf "temp" endet (deckt "Temp", "WindowsTemp" & Co. ab;
+    schließt "C:\\Windows", "C:\\Users" & Co. aus). Relativer Pfad /
+    leerer Wert / nicht-expanded Token -> abgelehnt (Karte wird unsicher).
+    ACHTUNG (bewusste Einschränkung, s. Modul-Docstring): realpath löst
+    Junctions auf — die Suffix-Prüfung läuft auf dem aufgelösten ZIEL.
+    """
+    if not raw:
+        return False, "Pfad leer"
+    if raw.startswith("\\\\") or raw.startswith("//"):
+        return False, "Netzpfad abgelehnt"
+    if not os.path.isabs(raw):
+        return False, "relativer Pfad abgelehnt"
+    try:
+        resolved = (os.path.realpath(raw) if os.path.isdir(raw)
+                    else os.path.abspath(raw))
+    except OSError:
+        return False, "Pfad nicht auflösbar"
+    if os.path.dirname(resolved) == resolved:
+        return False, "Laufwerksroot abgelehnt"
+    if not os.path.basename(resolved).lower().endswith("temp"):
+        return False, "kein Temp-Ordner"
+    return True, ""
+
+
+def _log_error(where, exc_text):
+    """Fehlerdetails nach %LOCALAPPDATA%\\Temp-Reiniger\\error.log (best-effort).
+
+    In der windowed EXE ist sys.stderr None: traceback.print_exc() ist dort
+    ein stilles No-Op (und in CPython <= 3.13 würde es im traceback-Modul
+    selbst noch werfen). Das Log-File ist der verlässliche Ort für Details.
+    """
+    try:
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        d = os.path.join(base, "Temp-Reiniger")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "error.log"), "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} [{where}]\n"
+                    f"{exc_text}\n")
+    except Exception:
+        pass
 
 
 def make_tray_icon():
@@ -318,12 +604,16 @@ class Tooltip:
 #  Anwendung
 # --------------------------------------------------------------------------- #
 class TempApp(ctk.CTk):
-    def __init__(self):
+    def __init__(self, initial_scan=True):
         super().__init__()
         self._closing = False
         self._busy = False
         self._tween_tokens = {}
         self._tween_last = {}      # Key -> zuletzt ANGEZEIGTER Tween-Wert
+        self._tween_jobs = {}      # Key -> laufender after()-Job (Quit-Cancel)
+        self._ticker_job = None    # after()-Ids der Selbst-Treiber (D4-Fix)
+        self._poll_job = None
+        self._poll_active = False  # Reentrancy-Schutz _poll_ui (M2-Fix)
         self._all_armed = False
         self._all_armed_job = None
         self._last_scan_ts = None
@@ -335,6 +625,8 @@ class TempApp(ctk.CTk):
         self._tray_icon = None
         self._tray_ready = False
         self._tray_active = False
+        self._tray_started = None      # monotonic-Zeitpunkt Tray-Thread-Start
+        self._tray_degraded_hint = False   # Degradations-Hinweis schon gezeigt?
 
         ctk.set_appearance_mode("Light")
         self.title(f"Temp-Reiniger {__version__}")
@@ -354,7 +646,8 @@ class TempApp(ctk.CTk):
         self.f_small = ctk.CTkFont(family="Segoe UI", size=11)
 
         self._build_ui()
-        self._scan_all()   # beim Start nur einlesen — niemals löschen
+        if initial_scan:
+            self._scan_all()   # beim Start nur einlesen — niemals löschen
         self._status_ticker()
         self._start_tray()
         self._poll_ui()
@@ -430,6 +723,10 @@ class TempApp(ctk.CTk):
                      ).pack(side="left", padx=(14, 0))
 
     def _build_card(self, root, idx, title, path):
+        # H1-Fix: Env-Pfad validieren, BEVOR irgendwas an ihm gescannt/
+        # gelöscht wird. Unsichere Karten werden markiert, nicht gescannt,
+        # nicht gelöscht.
+        safe, unsafe_reason = validate_temp_path(path)
         card = ctk.CTkFrame(root, fg_color=CARD, border_width=1,
                             border_color=CARD_LINE, corner_radius=14)
         card.grid(row=1, column=idx, sticky="nsew", padx=14, pady=14)
@@ -443,15 +740,17 @@ class TempApp(ctk.CTk):
                                       padx=20, pady=(20, 0))
         # Pfad (mono, gekürzt; voller Pfad im Tooltip)
         full = path or "(nicht vorhanden)"
-        shown = self._ellipsize(full, 30)
+        if not safe:
+            full = f"{full}\n⚠ Pfad unzulässig: {unsafe_reason}"
+        shown = self._ellipsize(path or "(nicht vorhanden)", 30)
         path_lbl = ctk.CTkLabel(card, text=shown, font=self.f_path,
                                 text_color=INK_FAINT, anchor="w")
         path_lbl.grid(row=1, column=0, sticky="ew", padx=20, pady=(2, 0))
         card_tooltip = Tooltip(path_lbl, full)
 
-        # Große Zahl
-        num = ctk.CTkLabel(card, text="…", font=self.f_num, text_color=INK,
-                           anchor="w")
+        # Große Zahl (unsichere Karte: dauerhaft "—")
+        num = ctk.CTkLabel(card, text="…" if safe else "—", font=self.f_num,
+                           text_color=INK, anchor="w")
         num.grid(row=2, column=0, sticky="ew", padx=20, pady=(16, 2))
         # Füllstand-Leiste
         bar = ctk.CTkProgressBar(card, fg_color=TRACK, progress_color=ACCENT,
@@ -459,24 +758,43 @@ class TempApp(ctk.CTk):
         bar.set(0.0)
         bar.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 8))
         # Dateizahl
-        count = ctk.CTkLabel(card, text="—", font=self.f_body,
-                             text_color=INK_SOFT, anchor="w")
+        count = ctk.CTkLabel(card, text="—" if safe else "unzulässig",
+                             font=self.f_body,
+                             text_color=INK_SOFT if safe else WARN,
+                             anchor="w")
         count.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 2))
 
-        # Lösch-Button
-        btn = ctk.CTkButton(
-            card, text="Temp löschen", font=self.f_btn, height=42,
-            fg_color=ACCENT, hover_color=ACCENT_D, text_color="#FFFFFF",
-            corner_radius=9, command=lambda i=idx: self._on_card_delete(i),
-        )
+        # Lösch-Button (unsichere Karte: abgewertet, Klick gibt Feedback)
+        if safe:
+            btn = ctk.CTkButton(
+                card, text="Temp löschen", font=self.f_btn, height=42,
+                fg_color=ACCENT, hover_color=ACCENT_D, text_color="#FFFFFF",
+                corner_radius=9, command=lambda i=idx: self._on_card_delete(i),
+            )
+        else:
+            btn = ctk.CTkButton(
+                card, text="Pfad unzulässig", font=self.f_btn, height=42,
+                fg_color=TRACK, hover_color=TRACK, text_color=INK_FAINT,
+                corner_radius=9,
+                command=lambda i=idx: self._on_unsafe_card(i),
+            )
         btn.grid(row=6, column=0, sticky="ew", padx=20, pady=(10, 20))
 
         self.cards.append({
             "idx": idx, "title": title, "path": path,
             "num": num, "bar": bar, "count": count, "button": btn,
             "tooltip": card_tooltip,
+            "safe": safe, "unsafe_reason": unsafe_reason,
             "armed": False, "armed_job": None, "bytes": None, "nfiles": None,
         })
+
+    def _on_unsafe_card(self, idx):
+        """Klick auf dem Button einer unsicheren Karte: Feedback statt Stille."""
+        if self._closing:
+            return
+        c = self.cards[idx]
+        self._set_status(f"Pfad unzulässig: {c['unsafe_reason']} — "
+                         "Löschen für diese Karte verweigert.", WARN)
 
     def _build_total(self, root):
         total = ctk.CTkFrame(root, fg_color=CARD, border_width=1,
@@ -541,16 +859,18 @@ class TempApp(ctk.CTk):
         return f"vor {h} {unit}"
 
     def _status_ticker(self):
-        """Refresh-Feedback: aktualisiert „vor X Sekunden" (nur Bereit-Zustand)."""
+        """Refresh-Feedback: aktualisiert „vor X Sekunden" (nur Bereit-
+        Zustand) + 1-s Tray-Health-Check."""
         if self._closing:
             return
+        self._tray_health()
         if self._status_mode == "ready" and self._last_scan_ts is not None:
             self._set_status(
                 f"Bereit · eingelesen {self._last_scan_str} · "
                 f"{self._time_ago(self._last_scan_ts)} · "
                 f"{format_bytes(self._last_total)} gesamt"
             )
-        self.after(1000, self._status_ticker)
+        self._ticker_job = self.after(1000, self._status_ticker)
 
     def _cancel_rescan(self):
         """Angehängten Auto-Rescan (nach Lösch-Aktion) abbrechen."""
@@ -636,7 +956,8 @@ class TempApp(ctk.CTk):
             self._tween_last[key] = v       # zuletzt angezeigter Wert merken
             apply(v)
             if i < steps:
-                self.after(interval, lambda: step(i + 1))
+                self._tween_jobs[key] = self.after(interval,
+                                                   lambda: step(i + 1))
             else:
                 self._tween_last[key] = to_v
                 apply(to_v)
@@ -661,6 +982,8 @@ class TempApp(ctk.CTk):
         self.status_dot.configure(text_color=WARN)
         self.status_head.configure(text="Liest …")
         for i, c in enumerate(self.cards):
+            if not c["safe"]:
+                continue        # unsichere Karte: bleibt "—", wird nicht gescannt
             self._reset_tween(f"bar{i}")
             self._reset_tween(f"num{i}")
             c["num"].configure(text="…")
@@ -671,71 +994,128 @@ class TempApp(ctk.CTk):
         threading.Thread(target=self._scan_worker, daemon=True).start()
 
     def _scan_worker(self):
-        # Memo keyt nach REALPATH: auf Standard-Maschinen zeigen %TEMP% und
-        # %LOCALAPPDATA%\Temp auf denselben Ordner -> sonst doppeltes Walken
-        memo = {}
-        for c in self.cards:
-            p = c["path"]
-            k = os.path.realpath(p) if p else p
-            if k not in memo:
-                try:
-                    memo[k] = scan_folder(p)
-                except Exception:
-                    memo[k] = (0, 0)
-        payload = [(c["idx"], memo.get(os.path.realpath(c["path"]) if c["path"] else c["path"], (0, 0)))
-                   for c in self.cards]
+        try:
+            # Memo keyt nach REALPATH: auf Standard-Maschinen zeigen %TEMP% und
+            # %LOCALAPPDATA%\Temp auf denselben Ordner -> sonst doppeltes Walken
+            memo = {}
+            for c in self.cards:
+                if not c["safe"]:
+                    continue    # unsichere Pfade werden NICHT gescannt
+                p = c["path"]
+                k = os.path.realpath(p) if p else p
+                if k not in memo:
+                    try:
+                        memo[k] = scan_folder(p)
+                    except Exception:
+                        memo[k] = (0, 0, 0)
+            payload = [(c["idx"], memo.get(os.path.realpath(c["path"]) if c["path"] else c["path"], (0, 0, 0)))
+                       for c in self.cards if c["safe"]]
+        except Exception:
+            # M1-Fix: Sicherheitsnetz — ohne Completion-Callback würde die UI
+            # für immer "busy" bleiben (realpath-Fehler o. Ä. inklusive).
+            # In der console-less EXE ist print_exc() ein No-Op -> ins Log.
+            if sys.stderr is not None:
+                traceback.print_exc()
+            _log_error("scan_worker", traceback.format_exc())
+            self._ui_queue.put(self._on_scan_error)
+            return
         # thread-sicher: Ergebnis in Queue legen, Main-Thread führt _on_scanned aus
         self._ui_queue.put(lambda: self._on_scanned(payload))
+
+    def _scan_error_ui(self):
+        """Scan fehlgeschlagen: UI wieder freigeben + Warnung (Main-Thread)."""
+        if self._closing:
+            return
+        self._set_busy(False)
+        self.scan_button.configure(text="Aktualisieren")
+        self.status_head.configure(text="Fehler")
+        self.status_dot.configure(text_color=WARN)
+        self._status_mode = "result"   # Ticker lässt die Meldung stehen
+        self._set_status(
+            "Fehler beim Einlesen — Details: "
+            "%LOCALAPPDATA%\\Temp-Reiniger\\error.log", WARN)
+
+    def _on_scan_error(self):
+        """Scan-Worker-Net: immer eine Completion-Callback (M1-Fix)."""
+        self._scan_error_ui()
 
     def _on_scanned(self, payload):
         if self._closing:
             return
-        for idx, (b, n) in payload:
-            c = self.cards[idx]
-            c["bytes"], c["nfiles"] = b, n
-        # relative Füllstand (gröster Ordner = voll)
-        max_b = max((c["bytes"] or 0) for c in self.cards) or 1
-        # Gesamt über EINDEUTIGE Ordner: Duplikate (z. B. %TEMP% == %LOCALAPPDATA%\Temp)
-        # nur einmal zählen — die Karten zeigen trotzdem jeweils ihre eigene Größe.
-        _uniq = {}
-        for c in self.cards:
-            _uniq[os.path.realpath(c["path"]) if c["path"] else ("idx", c["idx"])] = c["bytes"] or 0
-        total = sum(_uniq.values())
-        # Duplikat-Hinweis (gleicher physischer Pfad)
-        paths = [os.path.realpath(c["path"]) if c["path"] else None for c in self.cards]
-        dup = len(set(paths)) < len(paths)
-        self.total_note.configure(
-            text=("Hinweis: zwei Pfade zeigen auf denselben Ordner "
-                  "(wird doppelt angezeigt).") if dup else ""
-        )
-        for i, c in enumerate(self.cards):
-            frac = (c["bytes"] or 0) / max_b
-            # Ausgangs-Wert = zuletzt ANGEZEIGTER Wert (kein Sprung, wenn ein
-            # Tween unterbrochen wurde)
-            prev_bar = float(self._tween_last.get(f"bar{i}", 0.0))
-            prev_b = float(self._tween_last.get(f"num{i}", 0))
-            self._tween(f"bar{i}", prev_bar, frac, c["bar"].set, 520 + i * 70)
-            self._tween(f"num{i}", prev_b, float(c["bytes"] or 0),
-                        lambda v, n=c["num"]: n.configure(text=format_bytes(int(v))),
-                        520 + i * 70)
-            c["count"].configure(text=f"{format_count(c['nfiles'])} "
-                                      f"{_plural_de(c['nfiles'] or 0, 'Datei', 'Dateien')}")
-        self._tween("total", float(self._tween_last.get("total", 0)), float(total),
-                    lambda v: self.total_num.configure(text=format_bytes(int(v))),
-                    560)
-        # fertig
-        self._set_busy(False)
-        self.scan_button.configure(text="Aktualisieren")
-        self.status_dot.configure(text_color=OK)
-        self._last_scan_ts = time.time()
-        self._last_scan_str = time.strftime("%H:%M")
-        self._last_total = total
-        self._status_mode = "ready"
-        self.status_head.configure(text="Bereit")
-        self._set_status(
-            f"Bereit · eingelesen {self._last_scan_str} · vor 0 Sekunden · "
-            f"{format_bytes(total)} gesamt", INK_SOFT
-        )
+        try:
+            blocked_total = 0
+            for idx, (b, n, bl) in payload:
+                c = self.cards[idx]
+                c["bytes"], c["nfiles"] = b, n
+                blocked_total += bl or 0
+            # relative Füllstand (gröster Ordner = voll; nur sichere Karten)
+            max_b = max([c["bytes"] or 0 for c in self.cards if c["safe"]],
+                        default=0) or 1
+            # Gesamt über EINDEUTIGE Ordner: Duplikate (z. B. %TEMP% ==
+            # %LOCALAPPDATA%\Temp) nur einmal zählen — die Karten zeigen
+            # trotzdem jeweils ihre eigene Größe. Unsichere Karten zählen
+            # NICHT mit (sie werden auch nicht gescannt).
+            _uniq = {}
+            for c in self.cards:
+                if c["safe"]:
+                    _uniq[os.path.realpath(c["path"]) if c["path"]
+                           else ("idx", c["idx"])] = c["bytes"] or 0
+            total = sum(_uniq.values())
+            # Duplikat-Hinweis (gleicher physischer Pfad, nur sichere Karten)
+            paths = [os.path.realpath(c["path"]) if c["path"] else None
+                     for c in self.cards if c["safe"]]
+            dup = len(set(paths)) < len(paths)
+            self.total_note.configure(
+                text=("Hinweis: zwei Pfade zeigen auf denselben Ordner "
+                      "(doppelt angezeigt, im Gesamt nur einmal gezählt).")
+                if dup else ""
+            )
+            for i, c in enumerate(self.cards):
+                if not c["safe"]:
+                    continue
+                frac = (c["bytes"] or 0) / max_b
+                # Ausgangs-Wert = zuletzt ANGEZEIGTER Wert (kein Sprung, wenn ein
+                # Tween unterbrochen wurde)
+                prev_bar = float(self._tween_last.get(f"bar{i}", 0.0))
+                prev_b = float(self._tween_last.get(f"num{i}", 0))
+                self._tween(f"bar{i}", prev_bar, frac, c["bar"].set, 520 + i * 70)
+                self._tween(f"num{i}", prev_b, float(c["bytes"] or 0),
+                            lambda v, n=c["num"]: n.configure(text=format_bytes(int(v))),
+                            520 + i * 70)
+                c["count"].configure(text=f"{format_count(c['nfiles'])} "
+                                          f"{_plural_de(c['nfiles'] or 0, 'Datei', 'Dateien')}")
+            self._tween("total", float(self._tween_last.get("total", 0)), float(total),
+                        lambda v: self.total_num.configure(text=format_bytes(int(v))),
+                        560)
+            # fertig
+            self._set_busy(False)
+            self.scan_button.configure(text="Aktualisieren")
+            self._last_scan_ts = time.time()
+            self._last_scan_str = time.strftime("%H:%M")
+            self._last_total = total
+            self._status_mode = "ready"
+            self.status_head.configure(text="Bereit")
+            status_txt = (f"Bereit · eingelesen {self._last_scan_str} · "
+                          f"vor 0 Sekunden · {format_bytes(total)} gesamt")
+            if blocked_total:
+                # Teilsichtbarkeit: amber statt grün (es fehlt Etwas)
+                status_txt += (f" · {format_count(blocked_total)} "
+                               f"{_plural_de(blocked_total, 'Eintrag', 'Einträge')} "
+                               f"nicht lesbar")
+                self.status_dot.configure(text_color=WARN)
+                self._set_status(status_txt, WARN)
+            else:
+                self.status_dot.configure(text_color=OK)
+                self._set_status(status_txt, INK_SOFT)
+        except Exception:
+            # M1-Fix: auch der Main-Thread-Teil braucht ein Netz — sonst
+            # könnte die UI nach einem Fehler hier "busy" bleiben (der
+            # äußere Poller-Net fängt den Throw, weiß aber nicht, dass ein
+            # Scan offen war).
+            if sys.stderr is not None:
+                traceback.print_exc()
+            _log_error("on_scanned", traceback.format_exc())
+            self._scan_error_ui()
 
     # ------------------------------------------------------------- Delete
     def _on_card_delete(self, idx):
@@ -773,6 +1153,19 @@ class TempApp(ctk.CTk):
         # Tray-Dialog) vor parallelen Workern (Delete neben Delete/Scan)
         if self._busy:
             return
+        # H1-Fix, zweite Verteidigungslinie (die UI verbaut unsichere Karten
+        # bereits): unsichere Pfade werden NIE gelöscht.
+        if target.get("all"):
+            if not any(c["safe"] for c in self.cards):
+                self._set_status("Kein gültiger Temp-Pfad gefunden — "
+                                 "Löschen verweigert.", WARN)
+                return
+        else:
+            c = self.cards[target["idx"]]
+            if not c["safe"]:
+                self._set_status(f"Pfad unzulässig: {c['unsafe_reason']} — "
+                                 "Löschen verweigert.", WARN)
+                return
         self._cancel_rescan()
         self._set_busy(True)
         scope = "alle Temp-Ordner" if target.get("all") else "einen Ordner"
@@ -785,9 +1178,11 @@ class TempApp(ctk.CTk):
     def _delete_worker(self, target):
         try:
             if target.get("all"):
-                # jeden physischen Ordner nur einmal (Dedup)
+                # jeden physischen Ordner nur einmal (Dedup), nur SICHERE Pfade
                 seen, jobs = set(), []
                 for c in self.cards:
+                    if not c["safe"]:
+                        continue
                     p = os.path.realpath(c["path"]) if c["path"] else None
                     if p and p not in seen:
                         seen.add(p)
@@ -795,22 +1190,26 @@ class TempApp(ctk.CTk):
             else:
                 c = self.cards[target["idx"]]
                 p = os.path.realpath(c["path"]) if c["path"] else None
-                jobs = [p] if p else []
-            freed = deleted = skipped = 0
+                jobs = [p] if (p and c["safe"]) else []
+            freed = deleted = skipped = blocked = 0
             for p in jobs:
-                f, d, s = delete_folder_contents(p)
+                f, d, s, b = delete_folder_contents(p)
                 freed += f
                 deleted += d
                 skipped += s
+                blocked += b
         except Exception:
             # Sicherheitsnetz (wie beim Scan-Worker): ohne Callback würde die UI
-            # für immer "busy" bleiben, und in der console-less EXE wäre der
-            # Traceback unsichtbar.
-            traceback.print_exc()
-            self._ui_queue.put(lambda: self._on_delete_error())
+            # für immer "busy" bleiben. In der console-less EXE ist
+            # print_exc() ein No-Op (sys.stderr ist None) -> Details ins Log.
+            if sys.stderr is not None:
+                traceback.print_exc()
+            _log_error("delete_worker", traceback.format_exc())
+            self._ui_queue.put(self._on_delete_error)
             return
         # thread-sicher: Ergebnis in Queue legen, Main-Thread führt _on_deleted aus
-        self._ui_queue.put(lambda: self._on_deleted(freed, deleted, skipped))
+        self._ui_queue.put(
+            lambda: self._on_deleted(freed, deleted, skipped, blocked))
 
     def _on_delete_error(self):
         """Unerwarteter Fehler im Delete-Worker: UI wieder freigeben (Main-Thread)."""
@@ -820,9 +1219,11 @@ class TempApp(ctk.CTk):
         self.status_head.configure(text="Fehler")
         self.status_dot.configure(text_color=WARN)
         self._status_mode = "result"   # Ticker lässt die Meldung stehen
-        self._set_status("Fehler beim Löschen — Details in der Konsole.", WARN)
+        self._set_status(
+            "Fehler beim Löschen — Details: "
+            "%LOCALAPPDATA%\\Temp-Reiniger\\error.log", WARN)
 
-    def _on_deleted(self, freed, deleted, skipped):
+    def _on_deleted(self, freed, deleted, skipped, blocked=0):
         if self._closing:
             return
         # Worker ist fertig -> UI WIEDER FREIGEBEN (auch während des 3-s
@@ -832,13 +1233,23 @@ class TempApp(ctk.CTk):
         self.status_head.configure(text="Fertig")
         self.total_button.configure(text="Alle löschen", fg_color=ACCENT,
                                     hover_color=ACCENT_D)
+        # "Einträge" statt "Dateien": Link-Einträge (Symlinks/Junctions)
+        # zählen hier ebenfalls mit.
         msg = (f"{format_bytes(freed)} entfernt · {format_count(deleted)} "
-               f"{_plural_de(deleted, 'Datei', 'Dateien')}")
+               f"{_plural_de(deleted, 'Eintrag', 'Einträge')}")
         self._status_mode = "result"
-        if skipped:
-            # Etwas ist geblieben -> amber (MeldUNG UND Punkt konsistent)
-            self._set_status(msg + f" · {format_count(skipped)} übersprungen",
-                             WARN)
+        # Amber, wenn Etwas geblieben ist: übersprungene Einträge ODER
+        # Ordner, die nicht einmal eingelesen werden konnten (Rechte) —
+        # in beiden Fällen ist die Löschung NICHT vollständig.
+        if skipped or blocked:
+            extra = []
+            if skipped:
+                extra.append(f"{format_count(skipped)} übersprungen")
+            if blocked:
+                extra.append(f"{format_count(blocked)} "
+                             f"{_plural_de(blocked, 'Eintrag', 'Einträge')} "
+                             f"nicht lesbar")
+            self._set_status(msg + " · " + " · ".join(extra), WARN)
             self.status_dot.configure(text_color=WARN)
         else:
             self._set_status(msg, OK)
@@ -849,7 +1260,13 @@ class TempApp(ctk.CTk):
 
     # ------------------------------------------------------------- Tray
     def _start_tray(self):
-        """System-Tray-Icon in einem eigenen Thread starten (Windows)."""
+        """System-Tray-Icon in einem eigenen Thread starten (Windows).
+
+        `_tray_active` wird hier optimistisch gesetzt; der 1-s-Health-Check
+        (_tray_health, läuft im _status_ticker) degradiert bei nachweislich
+        fehlendem Icon (Setup-Thread tot / Icon nicht sichtbar) auf
+        "Close = Quit" mit Status-Hinweis.
+        """
         try:
             import pystray
         except Exception:
@@ -862,57 +1279,196 @@ class TempApp(ctk.CTk):
                 )
                 self._tray_ready = True
                 self._tray_active = True
+                self._tray_started = time.monotonic()
                 self._tray_icon.run()
             except Exception:
-                self._tray_active = False
+                # Tray-Thread tot: (1) pystray-Setup-Thread entblocken — er
+                # wartet sonst auf ein Ready-Signal, das nie kommt (Non-
+                # Daemon-Thread -> würde den Prozess-Exit blockieren),
+                # (2) Degradation im Main-Thread (Fenster sichtbar halten,
+                # Close = Quit).
+                self._tray_queue_unblock()
+                self._ui_queue.put(self._on_tray_dead)
         threading.Thread(target=run, name="tray", daemon=True).start()
 
+    def _tray_queue_unblock(self):
+        """pystray-Setup-Thread entblocken, falls der Tray-Thread gestorben ist,
+        bevor das Ready-Signal gesendet wurde. Privat-Attribut von pystray
+        (Name-Mangling: __queue -> _Icon__queue) — defensive, Versions-
+        Robustheit über try/except."""
+        icon = self._tray_icon
+        if icon is None:
+            return
+        try:
+            q = getattr(icon, "_Icon__queue", None)
+            if q is not None:
+                q.put(True)
+        except Exception:
+            pass
+
+    def _tray_health(self):
+        """1-s-Check: nachweislich fehlendes Tray-Icon erkennen und
+        degradieren (Close = Quit).
+
+        pystray-Semantik: der Setup-Thread ist ONE-SHOT — er ENDET nach
+        `visible = True` (Normalzustand!). Also:
+          - Setup-Thread lebt  -> noch am Werk (kein Urteil),
+          - Setup-Thread tot + visible=True  -> Erfolg (auch bei still
+            fehlgeschlagenem NIM_ADD: sichtbar gemeldet, toleriert),
+          - Setup-Thread tot + visible=False -> S ist ABGESTÜRBT, bevor
+            das Icon sichtbar wurde (z. B. Exception im _show()) ->
+            DEGRADATION (3-s-Anlaufgrace, einmaliger Status-Hinweis).
+        """
+        icon = self._tray_icon
+        if icon is None or self._tray_started is None:
+            return
+        age = time.monotonic() - self._tray_started
+        if age < 3.0:
+            return
+        try:
+            st = getattr(icon, "_setup_thread", None)
+            alive = st.is_alive() if st is not None else True
+            visible = bool(getattr(icon, "visible", True))
+        except Exception:
+            return
+        if (not alive) and (not visible):
+            if self._tray_active:
+                self._tray_active = False
+            # M3-Fix: war das Fenster in den Tray ausgeblendet, MUSS es zurück
+            # — sonst wäre die App ohne Icon unerreichbar (wie _on_tray_dead).
+            try:
+                if self.state() == "withdrawn":
+                    self.deiconify()
+                    self.lift()
+            except tk.TclError:
+                pass
+            if not self._tray_degraded_hint:
+                self._tray_degraded_hint = True
+                self._status_mode = "result"   # Ticker nicht drüberschreiben
+                self.status_dot.configure(text_color=WARN)
+                self._set_status(
+                    "Tray-Icon nicht verfügbar — Schließen beendet jetzt "
+                    "die App.", WARN)
+
+    def _on_tray_dead(self):
+        """Tray-Thread ist tot (Exception in pystray): Degradation im
+        Main-Thread — Close = Quit; war das Fenster ausgeblendet, wieder
+        anzeigen (sonst wäre die App unerreichbar)."""
+        if self._closing:
+            return
+        self._tray_active = False
+        try:
+            if self.state() == "withdrawn":
+                self.deiconify()
+                self.lift()
+        except tk.TclError:
+            pass
+        if not self._tray_degraded_hint:
+            self._tray_degraded_hint = True
+            self._status_mode = "result"
+            self.status_dot.configure(text_color=WARN)
+            self._set_status(
+                "Tray-Icon ausgefallen — App läuft weiter im Fenster "
+                "(Schließen beendet jetzt die App).", WARN)
+
     def _build_menu(self):
-        """Rechtsklick-Menü: die 4 Lösch-Optionen + Öffnen + Beenden."""
+        """Rechtsklick-Menü: die 4 Lösch-Optionen + Öffnen + Beenden.
+
+        "Fenster öffnen" ist das Default-Item: Linksklick aufs Icon = Fenster
+        öffnen. Destruktive Aktionen bleiben ausschließlich dem Menü
+        (explizite Auswahl) vorbehalten.
+        """
         import pystray
         defs = temp_definitions()
+        labels = []
+        for i, (token, _p) in enumerate(defs):
+            labels.append(f"{token} leeren" +
+                          ("" if self.cards[i]["safe"] else " (unzulässig)"))
         return pystray.Menu(
-            pystray.MenuItem(f"{defs[0][0]} leeren",
+            pystray.MenuItem(labels[0],
                              lambda i, it: self._tray_action("card", 0)),
-            pystray.MenuItem(f"{defs[1][0]} leeren",
+            pystray.MenuItem(labels[1],
                              lambda i, it: self._tray_action("card", 1)),
-            pystray.MenuItem(f"{defs[2][0]} leeren",
+            pystray.MenuItem(labels[2],
                              lambda i, it: self._tray_action("card", 2)),
             pystray.MenuItem("Alle Temp-Ordner leeren",
                              lambda i, it: self._tray_action("all", None)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Fenster öffnen",
-                             lambda i, it: self._tray_show()),
+                             lambda i, it: self._tray_show(),
+                             default=True),
             pystray.MenuItem("Temp-Reiniger beenden",
                              lambda i, it: self._tray_quit()),
         )
 
     def _tray_action(self, kind, idx):
-        """Tray-Menü: Löschen ausführen (explizite Menüwahl, Main-Thread)."""
+        """Tray-Menü: Löschen ausführen (explizite Menüwahl).
+
+        Läuft im Tray-Thread: nur Queue-Hand-off. Busy-/Unsicher-Checks und
+        Feedback geschehen im Main-Thread — sonst stumme Drops ohne
+        Feedback (L9-Fix).
+        """
         if self._closing:
             return
         if kind == "all":
             # destruktiv: kurze Bestätigung im Main-Thread (siehe _confirm_tray_all)
             self._ui_queue.put(self._confirm_tray_all)
         else:
-            target = {"idx": idx}
-            self._ui_queue.put(lambda: self._do_delete(target))
+            self._ui_queue.put(lambda i=idx: self._on_tray_card(i))
+
+    def _on_tray_card(self, idx):
+        """Tray-Karten-Löschen im Main-Thread: mit Feedback statt stummer
+        Drops."""
+        if self._closing:
+            return
+        c = self.cards[idx]
+        if not c["safe"]:
+            self._set_status(f"Pfad unzulässig: {c['unsafe_reason']} — "
+                             "Löschen verweigert.", WARN)
+            return
+        if self._busy:
+            self._set_status("Etwas läuft gerade — Aktion verworfen.", WARN)
+            return
+        self._do_delete({"idx": idx})
 
     def _confirm_tray_all(self):
         """Tray 'Alle leeren': Bestätigung (läuft im Main-Thread)."""
         if self._closing:
             return
         if self._busy:
-            # Nicht stumm verwerfen: wenn kein laufender Scan seine Meldung
-            # gerade zeigt, kurz feedback geben
-            if self._status_mode in ("ready", "result"):
-                self._set_status("Etwas läuft gerade — Aktion verworfen.", WARN)
+            # NIE stumm verwerfen: explizite Menüwahl braucht Feedback
+            # (unabhängig vom aktuellen Status-Modus).
+            self._set_status("Etwas läuft gerade — Aktion verworfen.", WARN)
             return
+        if not any(c["safe"] for c in self.cards):
+            self._set_status("Kein gültiger Temp-Pfad gefunden — "
+                             "Löschen verweigert.", WARN)
+            return
+        # Modal-Text: bekannte Größe/Alter + ECHTE Anzahl eindeutiger
+        # sicherer Ordner (Standard-Maschine: %TEMP% == %LOCALAPPDATA%\Temp
+        # -> 2, nicht 3).
+        uniq = len({os.path.realpath(c["path"])
+                    for c in self.cards if c["safe"] and c["path"]})
+        size = (format_bytes(self._last_total)
+                if self._last_total is not None else "…")
+        age = self._last_scan_str or "noch nicht eingelesen"
         if tk_messagebox.askyesno(
             "Alle Temp-Ordner leeren",
-            "Wirklich ALLE drei Temp-Ordner leeren?\n"
+            f"Wirklich {uniq} Temp-Ordner leeren?\n"
+            f"{size} · eingelesen {age}\n"
             "Gesperrte Dateien werden übersprungen.",
         ):
+            # M1-Fix: TOCTOU nach dem Modal — der Auto-Rescan (+3 s) kann
+            # während des offenen Dialogs _busy gesetzt haben; der stumme
+            # Busy-Return in _do_delete würde ein explizites "Ja"
+            # verschlucken (verletzt "Stille Tray-Drops gibt es nicht") ->
+            # revalidieren + Feedback statt Silence.
+            if self._closing:
+                return
+            if self._busy:
+                self._set_status("Etwas läuft gerade — Aktion verworfen.",
+                                 WARN)
+                return
             self._do_delete({"all": True})
 
     def _tray_show(self):
@@ -944,6 +1500,14 @@ class TempApp(ctk.CTk):
         """
         if self._closing:
             return
+        if self._poll_active:
+            # M2-Fix: Re-Entry-Schutz — Tk's Modal-Loop dispatcht after()-Timer
+            # AUCH während eines offenen askyesno. Ohne Flag würde der Poller
+            # sich unter dem Dialog selbst reentravieren: wartende Kommandos
+            # (destruktive Deletes!) liefen UNTER dem unbeantworteten Dialog,
+            # und jeder Modal forkt dauerhaft eine extra Poller-Kette.
+            return
+        self._poll_active = True
         try:
             while True:
                 fn = self._ui_queue.get_nowait()
@@ -953,10 +1517,18 @@ class TempApp(ctk.CTk):
                     # EIN fehlerhaftes Kommando darf den Poller nicht töten:
                     # sonst wären Tray-Aktionen + UI-Updates für immer tot
                     # (App nicht mehr beendigbar). Fehler loggen, weiterpollen.
-                    traceback.print_exc()
+                    # (In der windowed EXE ist sys.stderr None -> print_exc()
+                    # ist ein No-Op; das Log-File ist der verlässliche Ort.)
+                    if sys.stderr is not None:
+                        traceback.print_exc()
+                    _log_error("ui_poll", traceback.format_exc())
         except queue.Empty:
             pass
-        self.after(120, self._poll_ui)
+        finally:
+            self._poll_active = False
+        if self._closing:
+            return
+        self._poll_job = self.after(120, self._poll_ui)
 
     def _on_unmap(self, event):
         """Minimieren -> in den Tray verschwinden (Fenster ausblenden)."""
@@ -979,6 +1551,22 @@ class TempApp(ctk.CTk):
             return
         self._closing = True
         self._cancel_rescan()
+        # D4-Fix: auch Ticker/Poller/Tween-Timer canceln — sonst feuern sie
+        # nach destroy() als gelöschte Tcl-Kommandos (Hintergrundfehler-Noise,
+        # den der Arm-Job-Kommentar unten genau vermeiden will).
+        for _job in (self._ticker_job, self._poll_job,
+                     *self._tween_jobs.values()):
+            if _job is None:
+                continue
+            try:
+                self.after_cancel(_job)
+            except Exception:
+                pass
+        if self._busy:
+            # DESIGN: Beenden während Delete = Abbruch, erneuter Lauf vollendet.
+            # Der abgebrochene Lauf war bisher komplett ungeloggt.
+            _log_error("quit", "Beenden während eines laufenden Workers — "
+                               "Lösch-/Scan-Lauf evtl. unvollständig beendet.")
         # Arm-Jobs (Zwei-Stufen-Bestätigung) abbrechen: sonst feuert ein
         # verbliebener after()-Revert NACH dem destroy und configure() auf
         # einem zerstörten Widget -> TclError-Noise via report_callback_exception
@@ -1022,8 +1610,8 @@ def _dev_screenshot(app, out_path, mock):
 
     if mock:
         # synthetische Demo-Werte (nur fürs Layout-Bild, NICHT echt)
-        demo = {0: (2_340_000_000, 1244), 1: (812_000_000, 389),
-                2: (456_000_000, 207)}
+        demo = {0: (2_340_000_000, 1244, 0), 1: (812_000_000, 389, 0),
+                2: (456_000_000, 207, 0)}
         app._on_scanned([(k, demo[k]) for k in demo])
     else:
         # echtes Einlesen (Nur lesen) bis fertig
@@ -1048,11 +1636,56 @@ def _dev_screenshot(app, out_path, mock):
     print(f"[dev] Screenshot gespeichert: {out_path}")
 
 
+_INSTANCE_MUTEX = None
+
+
+def _acquire_instance_mutex():
+    """Single-Instance-Schutz: benannter Mutex (CreateMutexW).
+
+    Zwei Instanzen könnten denselben Temp-Ordner parallel leeren (Doppel-
+    Zählung der "entfernten" Größe + Races um dieselben Dateien).
+    ERROR_ALREADY_EXISTS (183) => eine Instanz läuft bereits.
+    L1-Fix: FAIL-CLOSED — ein NULL-Handle (z. B. ERROR_ACCESS_DENIED an einem
+    fremd vorerzeugten Mutex-Objekt) LEHNT ab statt zu starten; sonst erzwingt
+    ein Angreifer genau die Doppel-Instanz, vor der der Mutex schützt.
+    GetLastError über das thread-lokale use_last_error (ctypes-Regel: rohes
+    kernel32.GetLastError() ist nicht sicher, Python kann dazwischen WinAPI
+    aufrufen).
+    """
+    global _INSTANCE_MUTEX
+    import ctypes.wintypes as wt
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateMutexW.restype = wt.HANDLE   # ohne restype: 64-Bit-Handles truncate
+    h = k32.CreateMutexW(None, False, "Local\\Temp-Reiniger")
+    err = ctypes.get_last_error()
+    if not h or err == 183:
+        return False
+    _INSTANCE_MUTEX = h   # bis zum Prozess-Ende halten (Kernel räumt auf)
+    return True
+
+
 def main():
+    if getattr(sys, "frozen", False):
+        # M5-Fix: Die taeuschenden Dev-Modi NUR aus dem Quellcode. Nie in
+        # der ausgelieferten EXE — sonst zeigt MOCK+SCREENSHOT fake Größen
+        # VOR echten Deletes (und ein schiefer Screenshot-Pfad hielt die
+        # luegende UI offen). LAUNCH_CHECK bleibt erlaubt: reiner
+        # Build-Smoke-Test (UI + Tray aufbauen, sauber beenden, NICHTS
+        # loescht) — genau der Weg, mit dem gebaute EXEn verifiziert werden.
+        for _k in ("TEMP_REINIGER_MOCK", "TEMP_REINIGER_SCREENSHOT"):
+            os.environ.pop(_k, None)
     mock = os.environ.get("TEMP_REINIGER_MOCK") == "1"
     shot = os.environ.get("TEMP_REINIGER_SCREENSHOT")
     launch_check = os.environ.get("TEMP_REINIGER_LAUNCH_CHECK")
-    app = TempApp()
+    if not _acquire_instance_mutex():
+        tk_messagebox.showinfo(
+            "Temp-Reiniger",
+            "Temp-Reiniger läuft bereits — oder der Instanz-Schutz war nicht "
+            "verfügbar (Single-Instance-Modus).")
+        sys.exit(0)
+    # MOCK-Modus: Start-Scan unterdrücken (reines Layout-Bild; sonst würde
+    # das echte Einlesen die Demo-Werte überlaufen lassen)
+    app = TempApp(initial_scan=not mock)
     if launch_check:
         # Nur: UI + Tray-Icon aufbauen, kurz warten, sauber beenden (kein Löschen).
         def check():
@@ -1078,8 +1711,14 @@ def main():
         app.after(2500, check)
     elif shot:
         def run_capture():
-            _dev_screenshot(app, shot, mock)
-            app.after(250, app.destroy)
+            try:
+                _dev_screenshot(app, shot, mock)
+            finally:
+                # M5-Fix: auch bei fehlerhaftem Screenshot (ImageGrab/save)
+                # MUSS beendet werden — sonst blieb eine MOCK-UI mit Fake-
+                # Größen stehen. Sauber über _do_quit (setzt _closing, stoppt
+                # das Tray-Icon, bricht Arm-Jobs ab) — nicht roh destroy().
+                app.after(250, app._do_quit)
         app.after(400 if mock else 2600, run_capture)
     app.mainloop()
 

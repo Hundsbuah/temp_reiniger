@@ -73,29 +73,71 @@ sinken Zahl und Leiste (Tween vom alten zum neuen Wert) — das „Leerziehen".
 - **Bereit:** `● Bereit · eingelesen HH:MM · vor X Sekunden · X gesamt`
   (das „vor X Sekunden" zählt live hoch, 1-s-Ticker).
 - **Löschen (armiert):** Button amber, „Wirklich löschen?" / „Wirklich alles löschen?".
-- **Entfernt:** Status grün `X entfernt · N Dateien`; bleibt ~3 s sichtbar, dann
-  **automatischer Re-Scan** der Ordner (Größen fallen auf den Rest).
-- **Übersprungen:** Status amber `… · K übersprungen` (gesperrte Dateien).
+- **Entfernt:** Status grün `X entfernt · N Einträge` (Link-Einträge zählen mit);
+  bleibt ~3 s sichtbar, dann **automatischer Re-Scan** der Ordner (Größen fallen
+  auf den Rest).
+- **Übersprungen:** Status amber `… · K übersprungen` (gesperrte Dateien);
+  zusätzlich `… · M Einträge nicht lesbar` (Ordner ohne Leserecht). Ein
+  blockierte Ebene zählt einmal; schlägt das Entfernen dort fehl, werden ihre
+  Eltern-Ebenen kaskadiert unterdrückt (keine Doppelzählung über die
+  Ahnen-Kette). Feindliche Ordnernamen (z. B. `.`/`..`-Trick) werden per
+  `\\?\`-Pfad-Rohpfad nachlesbar/nachlöschbar — gerettete Ordner zählen dann
+  **nicht** mehr als „nicht lesbar".
 - **Duplikat:** Hinweis `zwei Pfade zeigen auf denselben Ordner`.
 - **Leerer Ordner:** `0 B`, Leiste leer (kein Fehlerzustand).
 
-## System-Tray (Minimieren / Rechtsklick)
+## System-Tray (Minimieren / Klicks)
 - **Minimieren oder Schließen** des Fensters → Fenster wird ausgeblendet, die
-  App lebt weiter als **Tray-Icon** (Teal-Platte mit weißem Papierkorb).
+  App lebt weiter als **Tray-Icon** (Teal-Platte mit weißem Papierkorb) —
+  SOFERN das Tray-Icon verfügbar ist. Ein 1-s-Health-Check (Setup-Thread tot
+  oder Icon nach 3 s Grace nicht sichtbar) erkennt das und **degradiert**:
+  Close = Quit, einmaliger Status-Hinweis — und ein verstecktes (withdrawn)
+  Fenster wird zurückgeholt, damit die App auch degradiert erreichbar bleibt.
+- Grenze (Upstream, pystray 0.19.x): Nach einem **Explorer-Neustart**
+  verschwindet das Tray-Icon, ohne dass `visible` oder der Icon-Queue das
+  melden — pystray registriert sich nicht für die `TaskbarCreated`-Broadcast
+  neu. Dieser Fall ist von außen nicht beobachtbar und degradiert daher nicht
+  selbst; ein Neustart von außen scheitert am Instanz-Mutex. Behelf: Prozess
+  beenden (Task-Manager) und neu starten.
+- **Linksklick** aufs Icon: `Fenster öffnen` ist das Default-Item → Linksklick
+  zeigt das Hauptfenster. Destruktive Aktionen bleiben dem Menü (explizite
+  Auswahl) vorbehalten.
 - **Rechtsklick** im Tray: die 4 Lösch-Optionen (`%TEMP% leeren`,
   `%LOCALAPPDATA%\Temp leeren`, `%SystemRoot%\Temp leeren`,
   `Alle Temp-Ordner leeren`) + `Fenster öffnen` + `Temp-Reiniger beenden`.
 - Tray-Aktionen laufen über einen thread-sicheren Queue-Poller sicher in den
   Tk-Haupt-Thread (pystray hat einen eigenen Tray-Thread).
-- `Fenster öffnen` zeigt das Hauptfenster wieder an. (Linksklick aufs Icon
-  öffnet das Menü — pystray ohne Default-Item zeigt bei beiden Klicks das Menü.)
+- Stille Tray-Drops gibt es nicht: Busy-Drops und „Alle leeren" aus dem Tray
+  geben immer Status-Feedback („Etwas läuft gerade — Aktion verworfen.");
+  der Bestätigungs-Dialog nennt Größe, Einlesezeitpunkt und die ECHTE Anzahl
+  eindeutiger Ordner. Auch ein explizites „Ja" wird nach dem Schließen des
+  Dialogs erneut gegen Busy-/Close-Zustand validiert (der Auto-Rescan kann
+  während des offenen Dialogs gestartet sein) — Feedback statt verschlucktem
+  Ja oder stillem Start.
 
 ## Sicherheitsregeln (gebaut)
 - Beim Start wird **nie** gelöscht — nur eingelesen.
-- Löschen nur per expliziter Auswahl: Button (zwei Schritte) oder Tray-Rechtsklick.
+- Löschen nur per expliziter Auswahl: Button (zwei Schritte) oder Tray-Menü.
+- JEDER Temp-Pfad wird validiert (absolut, kein Laufwerksroot/UNC, letzte
+  Komponente endet auf „temp") — unzulässige Karten werden weder gescannt
+  noch gelöscht und sind in der UI markiert (Button abgewertet, Tooltip
+  begründet).
+- Single-Instance: zweite Instanz wird abgelehnt (benannter Mutex,
+  fail-CLOSED — ist der Mutex nicht erzeugbar, wird ebenfalls abgelehnt statt
+  stillschweigend doppelt zu laufen).
+- Dev-Modi (MOCK/SCREENSHOT) gibt es nur im Quellcode; die gebaute EXE
+  ignoriert sie (keine vorgetäuschten Größen vor echten Deletes).
+  LAUNCH_CHECK ist zerstörungsfrei (UI + Tray aufbauen, nichts löschen) und
+  bleibt erlaubt — er verifiziert gebaute EXEs.
 - Wurzelmappen bleiben immer — nur der Inhalt wird entfernt.
-- Gesperrte/in-Benutzung Dateien werden übersprungen, kein Abbruch.
+- Gesperrte/in-Benutzung Dateien werden übersprungen, kein Abbruch; nicht
+  lesbare Ordner werden als „nicht lesbar" gezählt (Status amber).
 - `C:\Windows\Temp` ohne Admin nur teilweise leerbar (Überspringen).
 - Nach dem Löschen werden die Ordner **automatisch neu gescannt** (nach ~3 s,
   damit die freigemachte Größe sichtbar bleibt).
-- UI bleibt reaktionsschnell (Worker-Thread + `after`-Marshalling).
+- Beenden während eines laufenden Deletes bricht es ab und protokolliert den
+  Fall in `error.log`; ein erneuter Lauf vollendet die Löschung (idempotent).
+- Unerwartete Fehler landen zusätzlich in `%LOCALAPPDATA%\Temp-Reiniger\error.log`.
+- UI bleibt reaktionsschnell (Worker-Thread + `after`-Marshalling); Scan- UND
+  Delete-Worker haben ein Exception-Netz mit garantiertem
+  Completion-Callback (UI bleibt nie „busy" hängen).

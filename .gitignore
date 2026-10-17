@@ -15,3 +15,6 @@ Thumbs.db
 .DS_Store
 .idea/
 .vscode/
+# Graphify: datierte Backups + Label-Pending (regenerierbar)
+graphify-out/20*-*/
+graphify-out/.graphify_labels.pending.json

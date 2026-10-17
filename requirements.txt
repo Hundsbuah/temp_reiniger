@@ -1,7 +1,13 @@
 # Laufzeit-Abhängigkeiten (für Start aus dem Quellcode)
 # Die fertige EXE (dist/Temp-Reiniger.exe) ist davon unabhängig.
 customtkinter>=5.2
-pystray>=0.19          # Windows: reines ctypes (Pillow + six werden automatisch mitgezogen), kein pywin32 nötig
+pystray>=0.19.5,<0.20  # Windows: reines ctypes (Pillow + six werden automatisch mitgezogen), kein pywin32 nötig;
+                       # >=0.19.5: stop() ist no-op, solange das Icon nicht laeuft — der
+                       # Quit-Flow (icon.stop() + destroy) setzt darauf.
+                       # <0.20 (L5-Fix): temp_reiniger.py greift auf private
+                       # Interna zu (_Icon__queue, _setup_thread, visible);
+                       # ein Major-Sprung koennte sie still umbauen —
+                       # Health-/Quit-Flow waere dann leise kaputt.
 Pillow>=10.0
 
 # Nur zum Bauen der EXE:

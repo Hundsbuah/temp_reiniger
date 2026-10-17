@@ -21,7 +21,7 @@ Stand 2026-10-05:
   Status-ZEILE: der 1-s-Status-Ticker schreibt "vor X Sekunden" jede
   Sekunde neu -> st != status_before wurde OHNE Klick wahr (False Positive).
 """
-import os, sys, time, ctypes, ctypes.wintypes as wt
+import os, sys, time, ctypes, ctypes.wintypes as wt, threading
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -40,18 +40,46 @@ print("Virtual Screen:", VX0, VY0, VW, VH)
 
 class POINT(ctypes.Structure):
     _fields_ = [("x", wt.LONG), ("y", wt.LONG)]
+# ACHTUNG (2026-10-06, SendInput-87-Fix): In den echten Windows-Headern ist
+# MOUSEINPUT.dwExtraInfo ein ULONG_PTR (8 Byte auf x64) — NICHT DWORD!
+# (Die vorige "DWORD-Fix"-Runde war falsch: das gepackte 28/32-Byte-Layout
+# wird mit ERROR_INVALID_PARAMETER (87) abgelehnt.) Korrektes Layout x64:
+# MOUSEINPUT=32 (28 + Padding), Union=32 (alle drei Mitglieder; KEYBDINPUT
+# mit ULONG_PTR zwingt Alignment 8), INPUT=4 (type) + 4 (Padding) + 32 = 40.
+# SendInput validiert cbSize gegen genau dieses sizeof(INPUT).
 class MOUSEINPUT(ctypes.Structure):
-    # ACHTUNG: dwExtraInfo ist DWORD (4 Byte), NICHT ein Pointer —
-    # sonst ist sizeof(INPUT_) falsch und SendInput lehnt cbSize ab.
     _fields_ = [("dx", wt.LONG), ("dy", wt.LONG), ("mouseData", wt.DWORD),
-                ("dwFlags", wt.DWORD), ("time", wt.DWORD), ("dwExtraInfo", wt.DWORD)]
+                ("dwFlags", wt.DWORD), ("time", wt.DWORD),
+                ("dwExtraInfo", ctypes.c_size_t)]   # ULONG_PTR (x-Bit-treu)
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = [("wVk", wt.WORD), ("wScan", wt.WORD), ("dwFlags", wt.DWORD),
+                ("time", wt.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+class HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [("uMessage", wt.DWORD), ("wParamL", wt.WORD), ("wParamH", wt.WORD)]
 class INPUT_(ctypes.Structure):
     class _U(ctypes.Union):
-        _fields_ = [("mi", MOUSEINPUT)]
+        _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT), ("hi", HARDWAREINPUT)]
     _fields_ = [("type", wt.DWORD), ("u", _U)]
-assert ctypes.sizeof(INPUT_) == 28, f"INPUT_-Layout kaputt: {ctypes.sizeof(INPUT_)} statt 28"
+assert ctypes.sizeof(INPUT_) == 40, f"INPUT_-Layout kaputt: {ctypes.sizeof(INPUT_)} statt 40 (x64)"
 MOUSEEVENTF_MOVE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP = 0x0001, 0x0002, 0x0004
 MOUSEEVENTF_ABSOLUTE = 0x8000
+
+# L8-Fix: Gesamtwatchdog (vorher KEINE -> unbegrenzter Hang moeglich) +
+# Exit-Codes auf allen Fehlpfaden (vorher nur print -> Exit 0)
+_done = {"flag": False}
+def _watchdog():
+    # 240 s: Deckt auch den haertbaren Klick-Pfad ab (3 Versuche x bis 8 s
+    # Einschluss-Wartezeit) — vorher 120 s, das wurde mit den Retries knapp.
+    time.sleep(240)
+    if not _done["flag"]:
+        print("WATCHDOG: Test haengt (>240 s) — Exit 3")
+        os._exit(3)
+threading.Thread(target=_watchdog, daemon=True).start()
+
+fails = []
+def record(name, cond):
+    fails.append((name, bool(cond)))
+    print(("PASS " if cond else "FAIL ") + name)
 
 def _abs(x, y):
     # Absolute Screen-Koordinate -> 0..65535 (SendInput-Norm) auf den
@@ -102,20 +130,43 @@ print(f"Klicke auf 'Aktualisieren' bei ({sx},{sy})")
 # Ticker schreibt sie im ready-Modus jede Sekunde neu ("vor X Sekunden")
 # -> text-change waere OHNE Klick ein garantierter False-Positive.
 head_before = app.status_head.cget("text")
-real_click(sx, sy)
 
-t0 = time.time()
-clicked = False
-while time.time() - t0 < 8:
+# Robustheit (2026-10-17): app.lift()/focus_force() bringen ein Fenster aus
+# einem Hintergrund-Prozess heraus NICHT zwingend nach vorn (Foreground-Lock).
+# Liegt ein fremdes Fenster ueber dem Button, trifft der physische Klick ins
+# Leere (gemessen: "KEIN EINSCHLAG"). daher: Fenster pro Versuch per
+# BringWindowToTop/HWND_TOP nach vorn (wirkt ohne Foreground-Rechte) und der
+# Zielpunkt wird per WindowFromPoint verifiziert, bevor geklickt wird.
+def _bring_ensure(x, y):
+    root = user32.GetAncestor(app.winfo_id(), 2)   # GA_ROOT
+    user32.BringWindowToTop(root)
+    user32.SetWindowPos(root, 0, 0, 0, 0, 0, 0x1 | 0x2 | 0x10)  # TOP|NOSIZE|NOMOVE|NOACTIVATE
+    time.sleep(0.3)
     app.update()
-    head = app.status_head.cget("text")
-    if head != head_before or app._busy:
-        clicked = True
-        print(f"EINSCHLAG: head='{head}' (vorher '{head_before}') | busy =", app._busy)
+    pt = POINT(x, y)
+    return user32.GetAncestor(user32.WindowFromPoint(pt), 2) == root
+
+clicked = False
+for _attempt in (1, 2, 3):
+    if not _bring_ensure(sx, sy):
+        print(f"  Hinweis: Zielpunkt ({sx},{sy}) liegt (noch) nicht auf "
+              f"unserem Fenster — Retry nach BringWindowToTop")
+    real_click(sx, sy)
+    t0 = time.time()
+    while time.time() - t0 < 8:
+        app.update()
+        head = app.status_head.cget("text")
+        if head != head_before or app._busy:
+            clicked = True
+            print(f"EINSCHLAG: head='{head}' (vorher '{head_before}') | busy =", app._busy)
+            break
+        time.sleep(0.1)
+    if clicked:
         break
-    time.sleep(0.1)
+    time.sleep(0.2)
 if not clicked:
-    print("KEIN EINSCHLAG nach 8 s (Button-Event nicht verarbeitet?)")
+    print("KEIN EINSCHLAG nach 3 Versuchen (Button-Event nicht verarbeitet?)")
+record("SendInput-Klick erzeugt Einschlag", clicked)
 
 # auf Scan-Fertig warten (max 30 s)
 t0 = time.time()
@@ -123,6 +174,26 @@ while app._busy and time.time() - t0 < 30:
     app.update()
     time.sleep(0.1)
 print("Scan fertig. busy =", app._busy)
+record("Start-Scan laeuft zu Ende (busy=False)", not app._busy)
+
+# L4-cross-check: Gesamt muss der Summe der EINDEUTIGEN sicheren Ordner
+# entsprechen (Duplikat zaehlt nur einmal; unsichere Karten zaehlen nicht).
+# WICHTIG: Tween (560 ms) via Tk-after() PUMPEN lassen — blosses Schlafen
+# ohne update() friert den Zwischenstand ein (after-Callbacks laufen nie).
+t0 = time.time()
+while time.time() - t0 < 1.5:
+    app.update()
+    time.sleep(0.05)
+uniq_paths = {}
+for c in app.cards:
+    if c["safe"]:
+        uniq_paths[os.path.realpath(c["path"]) if c["path"] else ("idx", c["idx"])] = c["bytes"] or 0
+total_expected = sum(uniq_paths.values())
+exp = tr.format_bytes(total_expected)
+got = app.total_num.cget("text")
+print(f"Total cross-check: angezeigt '{got}' erwartet '{exp}' "
+      f"(unique Summe {total_expected} B, {len(uniq_paths)} Ordner)")
+record("Gesamt = Summe eindeutiger sicherer Ordner", got == exp)
 print("Status:", app.status_msg.cget("text"))
 print("Cards:")
 for c in app.cards:
@@ -140,6 +211,7 @@ while time.time() - t0 < 2:
     app.update()
     time.sleep(0.05)
 print("Unmap-Ereignisse nach iconify:", len(unmap_hits), "| state:", app.state())
+record("Unmap-Event nach iconify", len(unmap_hits) >= 1)
 # Tray-Zustand nach Minimieren (App withdraw() bei tray aktiv)
 print("withdrawen?", app.state() == "withdrawn")
 
@@ -153,3 +225,7 @@ print("state nach _show_window:", app.state())
 
 app._do_quit()
 print("QUIT OK")
+_done["flag"] = True
+nfails = sum(1 for _n, ok in fails if not ok)
+print(f"ERGBNIS: {len(fails) - nfails}/{len(fails)} PASS, {nfails} FAIL")
+sys.exit(1 if nfails else 0)

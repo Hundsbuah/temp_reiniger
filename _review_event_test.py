@@ -62,10 +62,27 @@ def minimize_check():
 w.after(300, minimize_check)
 w.after(100, w.iconify)
 
+_exit_code = 0
 def finish():
+    global _exit_code
     print("HITS:", hits)
+    # L8-Fix: Assertions — vorher null; ein kaputtes Event-System fiel nicht
+    # auf. ACHTUNG: Pointer-Events (Button/Enter/Leave/CTk-Button) werden an
+    # SYNTHETIC auf WIDHDRAWN-Fenstern nicht zugestellt (Tk-Design) — die
+    # reale Klick-Pfad (Command feuert auf sichtbarem Fenster) verifiziert
+    # _review_e2e_test.py per echter SendInput-Klicks. Hier pruefbar und
+    # app-relevant: <Unmap> (der ECHTE Minimieren->Tray-Trigger der App)
+    # und Key-Events.
+    checks = [
+        ("Key-Event (withdrawn)", hits["key"] >= 1),
+        ("Unmap-Event (iconify) — app-kritisch", hits["unmap"] >= 1),
+    ]
+    for name, ok in checks:
+        print(("PASS " if ok else "FAIL ") + name)
+    _exit_code = 1 if any(not ok for _n, ok in checks) else 0
     root.destroy()
     croot.destroy()
 root.after(3500, finish)
 root.mainloop()
 print("DONE")
+sys.exit(_exit_code)
